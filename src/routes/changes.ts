@@ -30,6 +30,8 @@ export async function changeRoutes(app: FastifyInstance, opts: { db: Db; config:
           type: 'object',
           required: ['changes'],
           properties: {
+            // Époque de la clé du foyer utilisée pour chiffrer ce lot
+            epoch: { type: 'integer', minimum: 1, default: 1 },
             changes: {
               type: 'array',
               minItems: 1,
@@ -50,23 +52,28 @@ export async function changeRoutes(app: FastifyInstance, opts: { db: Db; config:
       },
       preHandler: requireDevice(db, 'admin', 'member'),
     },
-    async (request) => {
-      const { changes } = request.body as { changes: { id: string; nonce: string; ciphertext: string }[] };
+    async (request, reply) => {
+      const { changes, epoch } = request.body as { epoch: number; changes: { id: string; nonce: string; ciphertext: string }[] };
       const { householdId, deviceId } = request.device!;
       const now = new Date().toISOString();
-      return db.tx(async (query) => {
+      const result = await db.tx(async (query) => {
+        // Clé renouvelée entre-temps : l'appareil doit d'abord récupérer la nouvelle
+        const h = (await query<{ key_epoch: number | string }>('SELECT key_epoch FROM households WHERE id = $1', [householdId])).rows[0];
+        if (Number(h?.key_epoch ?? 1) !== epoch) return null;
         let accepted = 0;
         for (const c of changes) {
           const r = await query(
-            `INSERT INTO changes (id, household_id, device_id, nonce, ciphertext, created_at) VALUES ($1, $2, $3, $4, $5, $6)
+            `INSERT INTO changes (id, household_id, device_id, nonce, ciphertext, created_at, epoch) VALUES ($1, $2, $3, $4, $5, $6, $7)
              ON CONFLICT (household_id, id) DO NOTHING`,
-            [c.id, householdId, deviceId, c.nonce, c.ciphertext, now],
+            [c.id, householdId, deviceId, c.nonce, c.ciphertext, now, epoch],
           );
           accepted += r.rowCount;
         }
         const { rows } = await query<{ cursor: string | number | null }>('SELECT MAX(seq) AS cursor FROM changes WHERE household_id = $1', [householdId]);
         return { accepted, duplicates: changes.length - accepted, latestSeq: Number(rows[0]?.cursor ?? 0) };
       });
+      if (!result) return reply.code(409).send({ error: 'stale_epoch' });
+      return result;
     },
   );
 
@@ -87,13 +94,13 @@ export async function changeRoutes(app: FastifyInstance, opts: { db: Db; config:
     },
     async (request) => {
       const { since, limit } = request.query as { since: number; limit: number };
-      const { rows } = await db.query<{ seq: string | number; id: string; device_id: string; nonce: string; ciphertext: string; created_at: unknown }>(
-        `SELECT seq, id, device_id, nonce, ciphertext, created_at
+      const { rows } = await db.query<{ seq: string | number; id: string; device_id: string; nonce: string; ciphertext: string; created_at: unknown; epoch: number | string }>(
+        `SELECT seq, id, device_id, nonce, ciphertext, created_at, epoch
            FROM changes WHERE household_id = $1 AND seq > $2 ORDER BY seq LIMIT $3`,
         [request.device!.householdId, since, limit + 1],
       );
       const hasMore = rows.length > limit;
-      const page = rows.slice(0, limit).map((r) => ({ seq: Number(r.seq), id: r.id, deviceId: r.device_id, nonce: r.nonce, ciphertext: r.ciphertext, createdAt: iso(r.created_at) }));
+      const page = rows.slice(0, limit).map((r) => ({ seq: Number(r.seq), id: r.id, deviceId: r.device_id, nonce: r.nonce, ciphertext: r.ciphertext, epoch: Number(r.epoch), createdAt: iso(r.created_at) }));
       return { changes: page, cursor: page.length ? page[page.length - 1].seq : since, hasMore };
     },
   );

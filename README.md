@@ -21,6 +21,8 @@ Dans l'app : Réglages → Partage → « Créer un partage », avec l'adresse d
 (ex. `http://192.168.1.20:8080`). Une fois votre foyer créé, passez `ALLOW_REGISTRATION=false`
 (fichier `.env`) : plus personne ne peut créer de foyer, seules les invitations validées fonctionnent.
 
+- **Réseau local seulement** : c'est un mode normal. Donnez à l'app l'adresse locale du serveur ;
+  hors de chez vous elle garde les modifications et les envoie d'elle-même au retour sur le Wi-Fi.
 - **Hors de chez vous** : utilisez un tunnel chiffré (Tailscale, WireGuard) ou un proxy HTTPS,
   plutôt que d'ouvrir un port sur votre box. En HTTP simple, les jetons d'appareil circulent en
   clair sur le réseau (le contenu des armoires, lui, reste chiffré de bout en bout).
@@ -46,9 +48,28 @@ Dans l'app : Réglages → Partage → « Créer un partage », avec l'adresse d
 | `member` | oui | oui | non |
 | `viewer` (lecture seule) | oui | non | non |
 
-Un appareil révoqué ne reçoit plus rien, mais il garde ce qu'il avait déjà téléchargé et la clé
-du foyer : la rotation de clé après révocation est prévue, pas encore faite. Il reste toujours au
-moins un administrateur ; le dernier appareil qui quitte le partage efface le foyer du serveur.
+Un administrateur peut changer le rôle d'un membre ou d'un lecteur, et les retirer. Il ne peut ni
+rétrograder ni retirer un **autre administrateur** : chacun ne peut que se rétrograder ou partir
+lui-même, tant qu'il en reste un autre. Le dernier appareil qui quitte le partage efface le foyer.
+
+### Clé du foyer et révocation
+
+Chaque téléphone a sa propre paire de clés ; le contenu, lui, est chiffré avec une clé commune au
+foyer (sinon les téléphones ne pourraient pas se lire entre eux). Quand un appareil est retiré ou
+quitte le partage, le serveur demande un **renouvellement** : le téléphone d'un administrateur crée
+une nouvelle clé (nouvelle « époque ») et la dépose chiffrée séparément pour chaque appareil restant.
+Les autres la récupèrent à leur synchronisation suivante, sans intervention. L'appareil parti garde
+ce qu'il avait déjà reçu, mais ne peut rien lire de la suite, même en obtenant une copie de la base.
+
+Les clés publiques utilisées pour ce renouvellement ne sont pas fournies par le serveur : elles
+circulent entre téléphones dans le journal chiffré. Limite connue : à l'ajout d'un téléphone, c'est
+l'administrateur qui vérifie le nouveau (code de vérification) ; le nouveau, lui, fait confiance au
+serveur pour lui remettre le trousseau scellé par l'administrateur.
+
+### Photos
+
+Les photos (produits, ordonnances) sont envoyées chiffrées, sous un identifiant opaque
+(`MAX_BLOB_BYTES`, 3 Mo par défaut). Elles ne sont pas encore effacées du serveur quand une photo est remplacée.
 
 ## Développement
 
@@ -62,7 +83,7 @@ npm run dev                                                               # SQLi
 
 Variables : `DATABASE_URL` (`postgres://…` ou `sqlite:/chemin/fichier.db` ; par défaut SQLite dans `DATA_DIR`),
 `DATA_DIR` (`./data`, `/data` dans l'image), `PORT` (8080), `HOST` (0.0.0.0), `ALLOW_REGISTRATION` (true),
-`MAX_CHANGE_BYTES` (262144), `INVITE_TTL_HOURS` (24), `PUBLIC_RATE_LIMIT` (20 par minute et par adresse), `LOG_LEVEL` (info).
+`MAX_CHANGE_BYTES` (262144), `MAX_BLOB_BYTES` (3145728), `INVITE_TTL_HOURS` (24), `PUBLIC_RATE_LIMIT` (20 par minute et par adresse), `LOG_LEVEL` (info).
 
 ## API v1
 
@@ -79,10 +100,14 @@ Authentification : `Authorization: Bearer <deviceToken>`. Un appareil n'accède 
 | GET | `/v1/households/:id/join-requests` | admin | Demandes en attente (nom, clé publique) |
 | POST | `/v1/households/:id/join-requests/:requestId/approve` | admin | Valide `{role, sealedKey}` |
 | POST | `/v1/households/:id/join-requests/:requestId/reject` | admin | Refuse |
-| GET | `/v1/households/:id/devices` | tous | Appareils du foyer et leurs rôles |
+| GET | `/v1/households/:id/devices` | tous | Appareils du foyer et leurs rôles ; `keyEpoch`, `rekeyNeeded` |
 | PATCH | `/v1/households/:id/devices/:deviceId` | soi-même (nom), admin (nom, rôle) | Renomme, change le rôle |
-| DELETE | `/v1/households/:id/devices/:deviceId` | soi-même, admin | Quitte le partage, ou révoque un appareil |
-| POST | `/v1/households/:id/changes` | admin, member | Envoie jusqu'à 500 modifications chiffrées `{id, nonce, ciphertext}` ; un `id` déjà reçu est ignoré |
+| DELETE | `/v1/households/:id/devices/:deviceId` | soi-même, admin | Quitte le partage, ou révoque un appareil (jamais un autre administrateur) |
+| POST | `/v1/households/:id/keys` | admin | Dépose la clé renouvelée `{epoch, envelopes: [{deviceId, sealedKey}]}` pour tous les appareils restants |
+| GET | `/v1/households/:id/keys` | tous | Enveloppes destinées à cet appareil, par époque |
+| POST | `/v1/households/:id/changes` | admin, member | Envoie jusqu'à 500 modifications chiffrées `{epoch, changes: [{id, nonce, ciphertext}]}` ; un `id` déjà reçu est ignoré ; `409 stale_epoch` si la clé a été renouvelée |
+| GET, PUT, DELETE | `/v1/households/:id/blobs/:blobId` | lecture : tous ; écriture : admin, member | Fichier chiffré `{epoch, nonce, ciphertext}` |
+| GET | `/v1/households/:id/blobs` | tous | Identifiants des fichiers présents |
 | GET | `/v1/households/:id/changes?since=<seq>&limit=<n>` | tous | Lit le journal après le curseur `since` → `changes`, `cursor`, `hasMore` |
 
 ## Licence

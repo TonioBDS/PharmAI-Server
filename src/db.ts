@@ -74,6 +74,32 @@ const PG_MIGRATIONS: string[] = [
   );
   CREATE INDEX join_requests_household_idx ON join_requests(household_id, status);
   `,
+  // 3 : renouvellement de la clé du foyer (époques, enveloppes par appareil) et fichiers chiffrés (photos)
+  `
+  ALTER TABLE households ADD COLUMN key_epoch INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE households ADD COLUMN rekey_needed INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE changes ADD COLUMN epoch INTEGER NOT NULL DEFAULT 1;
+
+  CREATE TABLE key_envelopes (
+    household_id UUID NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+    epoch INTEGER NOT NULL,
+    device_id UUID NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    sealed_key TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (household_id, epoch, device_id)
+  );
+
+  CREATE TABLE blobs (
+    household_id UUID NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+    id TEXT NOT NULL,
+    device_id UUID NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    epoch INTEGER NOT NULL,
+    nonce TEXT NOT NULL,
+    ciphertext TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (household_id, id)
+  );
+  `,
 ];
 
 const SQLITE_MIGRATIONS: string[] = [
@@ -130,6 +156,32 @@ const SQLITE_MIGRATIONS: string[] = [
     decided_at TEXT
   );
   CREATE INDEX join_requests_household_idx ON join_requests(household_id, status);
+  `,
+  // 3 : renouvellement de la clé du foyer (époques, enveloppes par appareil) et fichiers chiffrés (photos)
+  `
+  ALTER TABLE households ADD COLUMN key_epoch INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE households ADD COLUMN rekey_needed INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE changes ADD COLUMN epoch INTEGER NOT NULL DEFAULT 1;
+
+  CREATE TABLE key_envelopes (
+    household_id TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+    epoch INTEGER NOT NULL,
+    device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    sealed_key TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (household_id, epoch, device_id)
+  );
+
+  CREATE TABLE blobs (
+    household_id TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+    id TEXT NOT NULL,
+    device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    epoch INTEGER NOT NULL,
+    nonce TEXT NOT NULL,
+    ciphertext TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (household_id, id)
+  );
   `,
 ];
 

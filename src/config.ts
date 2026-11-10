@@ -6,6 +6,8 @@ export interface Config {
   allowRegistration: boolean;
   /** Taille maximale d'une modification chiffrée, en octets (après décodage base64). */
   maxChangeBytes: number;
+  /** Taille maximale d'un fichier chiffré (photo), en octets */
+  maxBlobBytes: number;
   /** Durée de validité d'une invitation, en heures. */
   inviteTtlHours: number;
   /** Tentatives par minute et par adresse sur les routes sans jeton (création de foyer, invitation). */
@@ -32,6 +34,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     databaseUrl,
     allowRegistration: bool(env.ALLOW_REGISTRATION, true),
     maxChangeBytes: int(env.MAX_CHANGE_BYTES, 256 * 1024),
+    maxBlobBytes: int(env.MAX_BLOB_BYTES, 3 * 1024 * 1024),
     inviteTtlHours: int(env.INVITE_TTL_HOURS, 24),
     publicRateLimit: int(env.PUBLIC_RATE_LIMIT, 20),
     logLevel: env.LOG_LEVEL ?? 'info',
