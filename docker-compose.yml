@@ -1,8 +1,10 @@
 # Auto-hébergement (Raspberry Pi, NAS, mini-PC) : un seul conteneur, base SQLite dans un volume.
 #   docker compose up -d --build
-# Le serveur écoute sur le port 8080 de la machine. Pour l'atteindre hors de chez vous,
+# Guide pas à pas : docs/DEPLOIEMENT.md. Port de la machine réglable dans .env (PORT=…, 8080 par défaut). Pour l'atteindre hors de chez vous,
 # préférez un tunnel chiffré (Tailscale, WireGuard) à l'ouverture d'un port sur la box.
 # Sauvegarde : copiez le volume « data » (fichier pharmai.db) ; son contenu est chiffré par les téléphones.
+# Nom de projet fixe : conteneur et volume « pharmai_… », distincts de vos autres piles
+name: pharmai
 services:
   server:
     build: .

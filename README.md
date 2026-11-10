@@ -10,6 +10,8 @@ si vous proposez une version modifiée à d'autres via un réseau, vous devez en
 
 ## Démarrer chez soi (Docker)
 
+**Guide pas à pas (port, pare-feu, sauvegarde, mise à jour) : [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md).**
+
 Un seul conteneur, base **SQLite** dans un volume : convient à un Raspberry Pi, un NAS ou un mini-PC.
 
 ```bash
