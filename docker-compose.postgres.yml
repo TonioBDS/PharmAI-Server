@@ -1,0 +1,34 @@
+# Variante PostgreSQL (plusieurs foyers, service hébergé) :
+#   cp .env.example .env    # puis changez POSTGRES_PASSWORD
+#   docker compose -f docker-compose.postgres.yml up -d --build
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pharmai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?définir POSTGRES_PASSWORD dans .env}
+      POSTGRES_DB: pharmai
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pharmai -d pharmai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://pharmai:${POSTGRES_PASSWORD}@db:5432/pharmai
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "${PORT:-8080}:8080"
+
+volumes:
+  pgdata:

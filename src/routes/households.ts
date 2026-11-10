@@ -1,141 +1,255 @@
 import type { FastifyInstance } from 'fastify';
-import { hash, newInviteCode, newToken, randomUUID, requireDevice } from '../auth.js';
+import { bearer, hash, newInviteCode, newToken, randomUUID, rateLimiter, requireDevice, Role, ROLES } from '../auth.js';
 import type { Config } from '../config.js';
-import type { Pool } from '../db.js';
+import { Db, iso, Query } from '../db.js';
 
 const deviceNameSchema = { type: 'string', minLength: 1, maxLength: 80 } as const;
 const uuidSchema = { type: 'string', format: 'uuid' } as const;
-const householdParams = {
-  type: 'object',
-  required: ['householdId'],
-  properties: { householdId: uuidSchema },
-} as const;
+const roleSchema = { type: 'string', enum: [...ROLES] } as const;
+const base64Schema = { type: 'string', minLength: 16, maxLength: 512, pattern: '^[A-Za-z0-9+/_-]+={0,2}$' } as const;
+const householdParams = { type: 'object', required: ['householdId'], properties: { householdId: uuidSchema } } as const;
+const deviceParams = { type: 'object', required: ['householdId', 'deviceId'], properties: { householdId: uuidSchema, deviceId: uuidSchema } } as const;
+const requestParams = { type: 'object', required: ['householdId', 'requestId'], properties: { householdId: uuidSchema, requestId: uuidSchema } } as const;
 
 /**
- * Foyers, appareils et invitations.
+ * Foyers, appareils, invitations et demandes d'ajout.
  *
- * La clé de chiffrement du foyer ne passe jamais par ici : elle est transmise
- * d'appareil à appareil (QR code). Le code d'invitation donne seulement le
- * droit de se connecter au serveur pour ce foyer.
+ * Ajouter un téléphone se fait en deux temps :
+ *  1. un administrateur crée une invitation (QR code ou lien) ; le nouveau
+ *     téléphone l'utilise pour déposer une demande avec sa clé publique ;
+ *  2. un administrateur compare le code de vérification affiché sur les deux
+ *     écrans, choisit un rôle et valide : son téléphone chiffre la clé du foyer
+ *     pour la clé publique du nouveau (sealedKey), que le serveur ne fait que relayer.
+ * La clé du foyer ne passe donc jamais en clair par le serveur, ni par le lien.
  */
-export async function householdRoutes(app: FastifyInstance, opts: { pool: Pool; config: Config }) {
-  const { pool, config } = opts;
-  const auth = requireDevice(pool);
+export async function householdRoutes(app: FastifyInstance, opts: { db: Db; config: Config }) {
+  const { db, config } = opts;
+  const anyDevice = requireDevice(db);
+  const admin = requireDevice(db, 'admin');
+  const limit = rateLimiter(config.publicRateLimit);
+  const now = () => new Date().toISOString();
 
-  async function createDevice(client: Pool | import('pg').PoolClient, householdId: string, name: string) {
-    const deviceId = randomUUID();
-    const token = newToken();
-    await client.query('INSERT INTO devices (id, household_id, name, token_hash) VALUES ($1, $2, $3, $4)', [
-      deviceId,
-      householdId,
-      name,
-      hash(token),
-    ]);
-    return { householdId, deviceId, deviceToken: token };
-  }
+  const activeAdmins = async (query: Query, householdId: string) =>
+    Number((await query<{ n: number | string }>("SELECT COUNT(*) AS n FROM devices WHERE household_id = $1 AND revoked_at IS NULL AND role = 'admin'", [householdId])).rows[0].n);
+  const activeDevices = async (query: Query, householdId: string) =>
+    Number((await query<{ n: number | string }>('SELECT COUNT(*) AS n FROM devices WHERE household_id = $1 AND revoked_at IS NULL', [householdId])).rows[0].n);
+
+  // ---------- Foyer ----------
 
   app.post(
     '/v1/households',
-    { schema: { body: { type: 'object', required: ['deviceName'], properties: { deviceName: deviceNameSchema } } } },
+    { schema: { body: { type: 'object', required: ['deviceName'], properties: { deviceName: deviceNameSchema } } }, preHandler: limit },
     async (request, reply) => {
       if (!config.allowRegistration) return reply.code(403).send({ error: 'registration_closed' });
       const { deviceName } = request.body as { deviceName: string };
-      const client = await pool.connect();
-      try {
-        await client.query('BEGIN');
-        const householdId = randomUUID();
-        await client.query('INSERT INTO households (id) VALUES ($1)', [householdId]);
-        const result = await createDevice(client, householdId, deviceName);
-        await client.query('COMMIT');
-        return reply.code(201).send(result);
-      } catch (err) {
-        await client.query('ROLLBACK');
-        throw err;
-      } finally {
-        client.release();
-      }
+      const householdId = randomUUID();
+      const deviceId = randomUUID();
+      const token = newToken();
+      await db.tx(async (query) => {
+        await query('INSERT INTO households (id, created_at) VALUES ($1, $2)', [householdId, now()]);
+        await query("INSERT INTO devices (id, household_id, name, token_hash, role, created_at) VALUES ($1, $2, $3, $4, 'admin', $5)", [
+          deviceId,
+          householdId,
+          deviceName,
+          hash(token),
+          now(),
+        ]);
+      });
+      return reply.code(201).send({ householdId, deviceId, deviceToken: token, role: 'admin' });
     },
   );
 
-  app.post(
-    '/v1/households/:householdId/invites',
-    { schema: { params: householdParams }, preHandler: auth },
-    async (request, reply) => {
-      const code = newInviteCode();
-      const expiresAt = new Date(Date.now() + config.inviteTtlHours * 3_600_000);
-      await pool.query('INSERT INTO invites (code_hash, household_id, created_by, expires_at) VALUES ($1, $2, $3, $4)', [
-        hash(code),
-        request.device!.householdId,
-        request.device!.deviceId,
-        expiresAt,
-      ]);
-      return reply.code(201).send({ inviteCode: code, expiresAt: expiresAt.toISOString() });
-    },
-  );
+  /** Arrêt du partage : efface du serveur le foyer, ses appareils et son journal chiffré. */
+  app.delete('/v1/households/:householdId', { schema: { params: householdParams }, preHandler: admin }, async (request, reply) => {
+    await db.query('DELETE FROM households WHERE id = $1', [request.device!.householdId]);
+    return reply.code(204).send();
+  });
+
+  // ---------- Invitations et demandes d'ajout ----------
+
+  app.post('/v1/households/:householdId/invites', { schema: { params: householdParams }, preHandler: admin }, async (request, reply) => {
+    const code = newInviteCode();
+    const expiresAt = new Date(Date.now() + config.inviteTtlHours * 3_600_000).toISOString();
+    await db.query('INSERT INTO invites (code_hash, household_id, created_by, expires_at) VALUES ($1, $2, $3, $4)', [
+      hash(code),
+      request.device!.householdId,
+      request.device!.deviceId,
+      expiresAt,
+    ]);
+    return reply.code(201).send({ inviteCode: code, expiresAt });
+  });
 
   app.post(
-    '/v1/invites/accept',
+    '/v1/invites/join',
     {
       schema: {
         body: {
           type: 'object',
-          required: ['inviteCode', 'deviceName'],
-          properties: { inviteCode: { type: 'string', minLength: 6, maxLength: 32 }, deviceName: deviceNameSchema },
+          required: ['inviteCode', 'deviceName', 'publicKey'],
+          properties: { inviteCode: { type: 'string', minLength: 6, maxLength: 32 }, deviceName: deviceNameSchema, publicKey: base64Schema },
         },
       },
+      preHandler: limit,
     },
     async (request, reply) => {
-      const { inviteCode, deviceName } = request.body as { inviteCode: string; deviceName: string };
-      const client = await pool.connect();
-      try {
-        await client.query('BEGIN');
-        const { rows } = await client.query<{ household_id: string }>(
-          `UPDATE invites SET used_at = now()
-            WHERE code_hash = $1 AND used_at IS NULL AND expires_at > now()
-            RETURNING household_id`,
-          [hash(inviteCode.trim().toUpperCase())],
+      const { inviteCode, deviceName, publicKey } = request.body as { inviteCode: string; deviceName: string; publicKey: string };
+      const token = newToken();
+      const requestId = randomUUID();
+      const householdId = await db.tx(async (query) => {
+        const { rows } = await query<{ household_id: string }>(
+          'UPDATE invites SET used_at = $1 WHERE code_hash = $2 AND used_at IS NULL AND expires_at > $1 RETURNING household_id',
+          [now(), hash(inviteCode.trim().toUpperCase())],
         );
-        if (!rows[0]) {
-          await client.query('ROLLBACK');
-          return reply.code(404).send({ error: 'invalid_invite' });
-        }
-        const result = await createDevice(client, rows[0].household_id, deviceName);
-        await client.query('COMMIT');
-        return reply.code(201).send(result);
-      } catch (err) {
-        await client.query('ROLLBACK');
-        throw err;
-      } finally {
-        client.release();
-      }
+        if (!rows[0]) return null;
+        await query(
+          `INSERT INTO join_requests (id, household_id, device_name, public_key, token_hash, status, created_at, expires_at)
+           VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7)`,
+          [requestId, rows[0].household_id, deviceName, publicKey, hash(token), now(), new Date(Date.now() + config.inviteTtlHours * 3_600_000).toISOString()],
+        );
+        return rows[0].household_id;
+      });
+      if (!householdId) return reply.code(404).send({ error: 'invalid_invite' });
+      // Le jeton ne sert à rien tant qu'un administrateur n'a pas validé la demande
+      return reply.code(201).send({ requestId, householdId, deviceToken: token });
     },
   );
 
-  app.get('/v1/households/:householdId/devices', { schema: { params: householdParams }, preHandler: auth }, async (request) => {
-    const { rows } = await pool.query(
-      `SELECT id, name, created_at AS "createdAt", last_seen_at AS "lastSeenAt", revoked_at AS "revokedAt"
-         FROM devices WHERE household_id = $1 ORDER BY created_at`,
-      [request.device!.householdId],
+  /** Le nouveau téléphone attend ici la décision (son futur jeton l'identifie). */
+  app.get(
+    '/v1/join-requests/:requestId',
+    { schema: { params: { type: 'object', required: ['requestId'], properties: { requestId: uuidSchema } } } },
+    async (request, reply) => {
+      const token = bearer(request);
+      if (!token) return reply.code(401).send({ error: 'unauthorized' });
+      const { requestId } = request.params as { requestId: string };
+      const { rows } = await db.query<{ status: string; role: Role | null; sealed_key: string | null; device_id: string | null; household_id: string; expires_at: unknown }>(
+        'SELECT status, role, sealed_key, device_id, household_id, expires_at FROM join_requests WHERE id = $1 AND token_hash = $2',
+        [requestId, hash(token)],
+      );
+      const r = rows[0];
+      if (!r) return reply.code(404).send({ error: 'not_found' });
+      if (r.status === 'pending' && String(iso(r.expires_at)) < now()) return { status: 'expired' };
+      if (r.status !== 'approved') return { status: r.status };
+      return { status: 'approved', householdId: r.household_id, deviceId: r.device_id, role: r.role, sealedKey: r.sealed_key };
+    },
+  );
+
+  app.get('/v1/households/:householdId/join-requests', { schema: { params: householdParams }, preHandler: admin }, async (request) => {
+    const { rows } = await db.query<{ id: string; device_name: string; public_key: string; created_at: unknown }>(
+      "SELECT id, device_name, public_key, created_at FROM join_requests WHERE household_id = $1 AND status = 'pending' AND expires_at > $2 ORDER BY created_at",
+      [request.device!.householdId, now()],
     );
-    return { devices: rows.map((d) => ({ ...d, current: d.id === request.device!.deviceId })) };
+    return { requests: rows.map((r) => ({ id: r.id, deviceName: r.device_name, publicKey: r.public_key, createdAt: iso(r.created_at) })) };
   });
 
-  app.delete(
-    '/v1/households/:householdId/devices/:deviceId',
+  app.post(
+    '/v1/households/:householdId/join-requests/:requestId/approve',
     {
       schema: {
-        params: { type: 'object', required: ['householdId', 'deviceId'], properties: { householdId: uuidSchema, deviceId: uuidSchema } },
+        params: requestParams,
+        body: { type: 'object', required: ['role', 'sealedKey'], properties: { role: roleSchema, sealedKey: base64Schema } },
       },
-      preHandler: auth,
+      preHandler: admin,
+    },
+    async (request, reply) => {
+      const { requestId } = request.params as { requestId: string };
+      const { role, sealedKey } = request.body as { role: Role; sealedKey: string };
+      const deviceId = randomUUID();
+      const ok = await db.tx(async (query) => {
+        const { rows } = await query<{ device_name: string; token_hash: string }>(
+          `UPDATE join_requests SET status = 'approved', role = $1, sealed_key = $2, device_id = $3, decided_at = $4
+            WHERE id = $5 AND household_id = $6 AND status = 'pending' AND expires_at > $4
+            RETURNING device_name, token_hash`,
+          [role, sealedKey, deviceId, now(), requestId, request.device!.householdId],
+        );
+        if (!rows[0]) return false;
+        await query('INSERT INTO devices (id, household_id, name, token_hash, role, created_at) VALUES ($1, $2, $3, $4, $5, $6)', [
+          deviceId,
+          request.device!.householdId,
+          rows[0].device_name,
+          rows[0].token_hash,
+          role,
+          now(),
+        ]);
+        return true;
+      });
+      if (!ok) return reply.code(404).send({ error: 'not_found' });
+      return reply.code(201).send({ deviceId, role });
+    },
+  );
+
+  app.post('/v1/households/:householdId/join-requests/:requestId/reject', { schema: { params: requestParams }, preHandler: admin }, async (request, reply) => {
+    const { requestId } = request.params as { requestId: string };
+    const { rowCount } = await db.query("UPDATE join_requests SET status = 'rejected', decided_at = $1 WHERE id = $2 AND household_id = $3 AND status = 'pending'", [
+      now(),
+      requestId,
+      request.device!.householdId,
+    ]);
+    if (!rowCount) return reply.code(404).send({ error: 'not_found' });
+    return reply.code(204).send();
+  });
+
+  // ---------- Appareils ----------
+
+  app.get('/v1/households/:householdId/devices', { schema: { params: householdParams }, preHandler: anyDevice }, async (request) => {
+    const { rows } = await db.query<{ id: string; name: string; role: Role; created_at: unknown; last_seen_at: unknown }>(
+      'SELECT id, name, role, created_at, last_seen_at FROM devices WHERE household_id = $1 AND revoked_at IS NULL ORDER BY created_at',
+      [request.device!.householdId],
+    );
+    return {
+      devices: rows.map((d) => ({ id: d.id, name: d.name, role: d.role, createdAt: iso(d.created_at), lastSeenAt: iso(d.last_seen_at), current: d.id === request.device!.deviceId })),
+    };
+  });
+
+  /** Renommer son appareil (tous) ; changer un rôle (administrateur). */
+  app.patch(
+    '/v1/households/:householdId/devices/:deviceId',
+    {
+      schema: { params: deviceParams, body: { type: 'object', minProperties: 1, additionalProperties: false, properties: { name: deviceNameSchema, role: roleSchema } } },
+      preHandler: anyDevice,
     },
     async (request, reply) => {
       const { deviceId } = request.params as { deviceId: string };
-      const { rowCount } = await pool.query(
-        'UPDATE devices SET revoked_at = now() WHERE id = $1 AND household_id = $2 AND revoked_at IS NULL',
-        [deviceId, request.device!.householdId],
-      );
-      if (!rowCount) return reply.code(404).send({ error: 'not_found' });
+      const { name, role } = request.body as { name?: string; role?: Role };
+      const me = request.device!;
+      if (role && me.role !== 'admin') return reply.code(403).send({ error: 'forbidden_role' });
+      if (name && me.role !== 'admin' && deviceId !== me.deviceId) return reply.code(403).send({ error: 'forbidden_role' });
+      const status = await db.tx(async (query) => {
+        const { rows } = await query<{ role: Role }>('SELECT role FROM devices WHERE id = $1 AND household_id = $2 AND revoked_at IS NULL', [deviceId, me.householdId]);
+        if (!rows[0]) return 404;
+        // Il doit toujours rester un administrateur
+        if (role && role !== 'admin' && rows[0].role === 'admin' && (await activeAdmins(query, me.householdId)) <= 1) return 409;
+        if (name) await query('UPDATE devices SET name = $1 WHERE id = $2', [name, deviceId]);
+        if (role) await query('UPDATE devices SET role = $1 WHERE id = $2', [role, deviceId]);
+        return 204;
+      });
+      if (status === 404) return reply.code(404).send({ error: 'not_found' });
+      if (status === 409) return reply.code(409).send({ error: 'last_admin' });
       return reply.code(204).send();
     },
   );
+
+  /**
+   * Révoquer un appareil (administrateur) ou quitter le partage (soi-même).
+   * Le dernier appareil qui part efface le foyer du serveur.
+   */
+  app.delete('/v1/households/:householdId/devices/:deviceId', { schema: { params: deviceParams }, preHandler: anyDevice }, async (request, reply) => {
+    const { deviceId } = request.params as { deviceId: string };
+    const me = request.device!;
+    if (deviceId !== me.deviceId && me.role !== 'admin') return reply.code(403).send({ error: 'forbidden_role' });
+    const status = await db.tx(async (query) => {
+      const { rows } = await query<{ role: Role }>('SELECT role FROM devices WHERE id = $1 AND household_id = $2 AND revoked_at IS NULL', [deviceId, me.householdId]);
+      if (!rows[0]) return 404;
+      if ((await activeDevices(query, me.householdId)) <= 1) {
+        await query('DELETE FROM households WHERE id = $1', [me.householdId]);
+        return 204;
+      }
+      if (rows[0].role === 'admin' && (await activeAdmins(query, me.householdId)) <= 1) return 409;
+      await query('UPDATE devices SET revoked_at = $1 WHERE id = $2', [now(), deviceId]);
+      return 204;
+    });
+    if (status === 404) return reply.code(404).send({ error: 'not_found' });
+    if (status === 409) return reply.code(409).send({ error: 'last_admin' });
+    return reply.code(204).send();
+  });
 }

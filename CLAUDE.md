@@ -7,7 +7,9 @@
   de champ en clair décrivant des médicaments, des personnes ou des symptômes.
 - Jamais de jeton, de code d'invitation ni de contenu dans les journaux ; seuls leurs hachés
   SHA-256 sont stockés.
-- Migrations dans `src/db.ts` : ajouter une entrée, ne jamais modifier une entrée publiée.
+- Deux moteurs (SQLite par défaut, PostgreSQL) : SQL commun (`$1`, dates ISO passées par le code),
+  toujours via l'interface `Db`. Migrations dans `src/db.ts`, une liste par moteur : ajouter une entrée
+  aux deux, ne jamais modifier une entrée publiée.
 - Validation des entrées par les schémas JSON de Fastify sur chaque route.
 - Textes, commentaires et messages en français.
 
@@ -15,6 +17,7 @@
 
 ```bash
 npm run typecheck
-TEST_DATABASE_URL=postgres://… npm test     # base jetable, vidée par les tests
+npm test                                    # SQLite en mémoire
+TEST_DATABASE_URL=postgres://… npm test     # + PostgreSQL : base jetable, vidée par les tests
 docker build -t pharmai-server .
 ```

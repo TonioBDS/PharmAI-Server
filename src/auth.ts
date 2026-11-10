@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { Pool } from './db.js';
+import type { Db } from './db.js';
 
 /** Jeton d'appareil : 32 octets aléatoires ; seul son haché SHA-256 est stocké. */
 export function newToken(): string {
@@ -22,9 +22,14 @@ export function hash(secret: string): string {
 
 export { randomUUID };
 
+/** admin : invite, valide, révoque ; member : lit et modifie ; viewer : lit seulement. */
+export const ROLES = ['admin', 'member', 'viewer'] as const;
+export type Role = (typeof ROLES)[number];
+
 export interface DeviceContext {
   deviceId: string;
   householdId: string;
+  role: Role;
 }
 
 declare module 'fastify' {
@@ -33,18 +38,22 @@ declare module 'fastify' {
   }
 }
 
+export function bearer(request: FastifyRequest): string | null {
+  const match = (request.headers.authorization ?? '').match(/^Bearer\s+(\S+)$/i);
+  return match ? match[1] : null;
+}
+
 /**
- * Vérifie le jeton « Authorization: Bearer … » et que l'appareil appartient
- * bien au foyer de l'URL. Répond 401/403 sinon.
+ * Vérifie le jeton « Authorization: Bearer … », que l'appareil appartient au
+ * foyer de l'URL et, si demandé, qu'il a l'un des rôles requis. Répond 401/403 sinon.
  */
-export function requireDevice(pool: Pool) {
+export function requireDevice(db: Db, ...roles: Role[]) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    const header = request.headers.authorization ?? '';
-    const match = header.match(/^Bearer\s+(\S+)$/i);
-    if (!match) return reply.code(401).send({ error: 'unauthorized' });
-    const { rows } = await pool.query<{ id: string; household_id: string }>(
-      'UPDATE devices SET last_seen_at = now() WHERE token_hash = $1 AND revoked_at IS NULL RETURNING id, household_id',
-      [hash(match[1])],
+    const token = bearer(request);
+    if (!token) return reply.code(401).send({ error: 'unauthorized' });
+    const { rows } = await db.query<{ id: string; household_id: string; role: Role }>(
+      'UPDATE devices SET last_seen_at = $1 WHERE token_hash = $2 AND revoked_at IS NULL RETURNING id, household_id, role',
+      [new Date().toISOString(), hash(token)],
     );
     const device = rows[0];
     if (!device) return reply.code(401).send({ error: 'unauthorized' });
@@ -52,6 +61,23 @@ export function requireDevice(pool: Pool) {
     if (params.householdId && params.householdId !== device.household_id) {
       return reply.code(403).send({ error: 'forbidden' });
     }
-    request.device = { deviceId: device.id, householdId: device.household_id };
+    if (roles.length && !roles.includes(device.role)) return reply.code(403).send({ error: 'forbidden_role' });
+    request.device = { deviceId: device.id, householdId: device.household_id, role: device.role };
+  };
+}
+
+/** Limite simple en mémoire pour les routes sans jeton (devinette de codes d'invitation, création en masse). */
+export function rateLimiter(perMinute: number) {
+  const hits = new Map<string, { count: number; reset: number }>();
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    const now = Date.now();
+    if (hits.size > 10_000) for (const [k, v] of hits) if (v.reset < now) hits.delete(k);
+    const entry = hits.get(request.ip);
+    if (!entry || entry.reset < now) {
+      hits.set(request.ip, { count: 1, reset: now + 60_000 });
+      return;
+    }
+    entry.count += 1;
+    if (entry.count > perMinute) return reply.code(429).send({ error: 'too_many_requests' });
   };
 }
