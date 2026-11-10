@@ -212,6 +212,76 @@ describe.each(targets)('API PharmAI (%s)', (_name, url) => {
     expect(Number(left.rows[0].n)).toBe(0);
   });
 
+  it('protège les administrateurs entre eux : seul soi-même peut se rétrograder ou partir', async () => {
+    const a = await newHousehold();
+    const b = await join(a, 'admin', 'Second admin');
+    const dev = (h: { householdId: string }, id: string) => `/v1/households/${h.householdId}/devices/${id}`;
+    // Un administrateur ne peut ni révoquer ni rétrograder un autre administrateur
+    expect((await app.inject({ method: 'DELETE', url: dev(a, b.deviceId), headers: bearer(a.deviceToken) })).statusCode).toBe(403);
+    const demote = await app.inject({ method: 'PATCH', url: dev(a, b.deviceId), headers: bearer(a.deviceToken), payload: { role: 'member' } });
+    expect(demote.statusCode).toBe(403);
+    expect(demote.json()).toEqual({ error: 'admin_protected' });
+    // Il peut se rétrograder lui-même tant qu'il en reste un autre…
+    expect((await app.inject({ method: 'PATCH', url: dev(a, a.deviceId), headers: bearer(a.deviceToken), payload: { role: 'member' } })).statusCode).toBe(204);
+    // …mais le dernier ne peut ni se rétrograder ni partir en laissant des appareils sans administrateur
+    expect((await app.inject({ method: 'PATCH', url: dev(b, b.deviceId), headers: bearer(b.deviceToken), payload: { role: 'viewer' } })).statusCode).toBe(409);
+    expect((await app.inject({ method: 'DELETE', url: dev(b, b.deviceId), headers: bearer(b.deviceToken) })).statusCode).toBe(409);
+    // Promotion d'un membre en administrateur, puis départ volontaire du premier
+    expect((await app.inject({ method: 'PATCH', url: dev(b, a.deviceId), headers: bearer(b.deviceToken), payload: { role: 'admin' } })).statusCode).toBe(204);
+    expect((await app.inject({ method: 'DELETE', url: dev(b, b.deviceId), headers: bearer(b.deviceToken) })).statusCode).toBe(204);
+  });
+
+  it('renouvelle la clé du foyer après un départ : époques et enveloppes par appareil', async () => {
+    const a = await newHousehold();
+    const b = await join(a, 'member');
+    const c = await join(a, 'viewer');
+    const devices = () => app.inject({ method: 'GET', url: `/v1/households/${a.householdId}/devices`, headers: bearer(a.deviceToken) });
+    expect((await devices()).json()).toMatchObject({ keyEpoch: 1, rekeyNeeded: false });
+    await app.inject({ method: 'DELETE', url: `/v1/households/${a.householdId}/devices/${c.deviceId}`, headers: bearer(a.deviceToken) });
+    expect((await devices()).json()).toMatchObject({ keyEpoch: 1, rekeyNeeded: true });
+
+    const keys = (token: string, payload: unknown) => app.inject({ method: 'POST', url: `/v1/households/${a.householdId}/keys`, headers: bearer(token), payload: payload as object });
+    const env = (id: string) => ({ deviceId: id, sealedKey: SEALED });
+    // Réservé aux administrateurs ; tous les appareils restants, et eux seuls ; époque suivante uniquement
+    expect((await keys(b.deviceToken, { epoch: 2, envelopes: [env(a.deviceId), env(b.deviceId)] })).statusCode).toBe(403);
+    expect((await keys(a.deviceToken, { epoch: 2, envelopes: [env(a.deviceId)] })).json()).toEqual({ error: 'devices_changed' });
+    expect((await keys(a.deviceToken, { epoch: 2, envelopes: [env(a.deviceId), env(b.deviceId), env(c.deviceId)] })).json()).toEqual({ error: 'devices_changed' });
+    expect((await keys(a.deviceToken, { epoch: 3, envelopes: [env(a.deviceId), env(b.deviceId)] })).json()).toEqual({ error: 'epoch_conflict' });
+    expect((await keys(a.deviceToken, { epoch: 2, envelopes: [env(a.deviceId), env(b.deviceId)] })).statusCode).toBe(201);
+    expect((await devices()).json()).toMatchObject({ keyEpoch: 2, rekeyNeeded: false });
+
+    const mine = await app.inject({ method: 'GET', url: `/v1/households/${a.householdId}/keys`, headers: bearer(b.deviceToken) });
+    expect(mine.json()).toEqual({ keyEpoch: 2, envelopes: [{ epoch: 2, sealedKey: SEALED }] });
+
+    // Un envoi chiffré avec l'ancienne clé est refusé ; avec la nouvelle, il porte son époque
+    const change = { id: randomUUID(), nonce: b64('nonce-de-24-octets-xxxxx'), ciphertext: b64('contenu') };
+    const stale = await app.inject({ method: 'POST', url: `/v1/households/${a.householdId}/changes`, headers: bearer(b.deviceToken), payload: { epoch: 1, changes: [change] } });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toEqual({ error: 'stale_epoch' });
+    expect((await app.inject({ method: 'POST', url: `/v1/households/${a.householdId}/changes`, headers: bearer(b.deviceToken), payload: { epoch: 2, changes: [change] } })).statusCode).toBe(200);
+    expect(((await pull(a)).json() as { changes: { epoch: number }[] }).changes.map((x) => x.epoch)).toEqual([2]);
+  });
+
+  it('stocke les fichiers chiffrés (photos) du foyer', async () => {
+    const a = await newHousehold();
+    const b = await join(a, 'viewer');
+    const other = await newHousehold();
+    const id = 'a'.repeat(40);
+    const url = (h: { householdId: string }, blob = id) => `/v1/households/${h.householdId}/blobs/${blob}`;
+    const body = { epoch: 1, nonce: b64('nonce-de-24-octets-xxxxx'), ciphertext: b64('photo chiffrée') };
+    expect((await app.inject({ method: 'PUT', url: url(a), headers: bearer(b.deviceToken), payload: body })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'PUT', url: url(a, 'pas un identifiant'), headers: bearer(a.deviceToken), payload: body })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'PUT', url: url(a), headers: bearer(a.deviceToken), payload: body })).statusCode).toBe(204);
+    // Renvoi ignoré, lecture par un appareil en lecture seule, cloisonnement entre foyers
+    expect((await app.inject({ method: 'PUT', url: url(a), headers: bearer(a.deviceToken), payload: { ...body, ciphertext: b64('autre') } })).statusCode).toBe(204);
+    expect((await app.inject({ method: 'GET', url: url(a), headers: bearer(b.deviceToken) })).json()).toEqual(body);
+    expect((await app.inject({ method: 'GET', url: `/v1/households/${a.householdId}/blobs`, headers: bearer(b.deviceToken) })).json()).toEqual({ ids: [id] });
+    expect((await app.inject({ method: 'GET', url: url(other), headers: bearer(other.deviceToken) })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: url(a), headers: bearer(other.deviceToken) })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'DELETE', url: url(a), headers: bearer(a.deviceToken) })).statusCode).toBe(204);
+    expect((await app.inject({ method: 'GET', url: url(a), headers: bearer(a.deviceToken) })).statusCode).toBe(404);
+  });
+
   it('peut fermer les inscriptions et limite les tentatives sans jeton', async () => {
     const closed = buildApp(loadConfig({ ...env, ALLOW_REGISTRATION: 'false' }), db);
     expect((await closed.inject({ method: 'POST', url: '/v1/households', payload: { deviceName: 'x' } })).statusCode).toBe(403);

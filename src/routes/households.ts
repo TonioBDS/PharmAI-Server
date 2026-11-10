@@ -6,6 +6,7 @@ import { Db, iso, Query } from '../db.js';
 const deviceNameSchema = { type: 'string', minLength: 1, maxLength: 80 } as const;
 const uuidSchema = { type: 'string', format: 'uuid' } as const;
 const roleSchema = { type: 'string', enum: [...ROLES] } as const;
+const sealedSchema = { type: 'string', minLength: 16, maxLength: 16384, pattern: '^[A-Za-z0-9+/_-]+={0,2}$' } as const;
 const base64Schema = { type: 'string', minLength: 16, maxLength: 512, pattern: '^[A-Za-z0-9+/_-]+={0,2}$' } as const;
 const householdParams = { type: 'object', required: ['householdId'], properties: { householdId: uuidSchema } } as const;
 const deviceParams = { type: 'object', required: ['householdId', 'deviceId'], properties: { householdId: uuidSchema, deviceId: uuidSchema } } as const;
@@ -147,7 +148,7 @@ export async function householdRoutes(app: FastifyInstance, opts: { db: Db; conf
     {
       schema: {
         params: requestParams,
-        body: { type: 'object', required: ['role', 'sealedKey'], properties: { role: roleSchema, sealedKey: base64Schema } },
+        body: { type: 'object', required: ['role', 'sealedKey'], properties: { role: roleSchema, sealedKey: sealedSchema } },
       },
       preHandler: admin,
     },
@@ -196,8 +197,12 @@ export async function householdRoutes(app: FastifyInstance, opts: { db: Db; conf
       'SELECT id, name, role, created_at, last_seen_at FROM devices WHERE household_id = $1 AND revoked_at IS NULL ORDER BY created_at',
       [request.device!.householdId],
     );
+    const h = (await db.query<{ key_epoch: number | string; rekey_needed: number | string }>('SELECT key_epoch, rekey_needed FROM households WHERE id = $1', [request.device!.householdId])).rows[0];
     return {
       devices: rows.map((d) => ({ id: d.id, name: d.name, role: d.role, createdAt: iso(d.created_at), lastSeenAt: iso(d.last_seen_at), current: d.id === request.device!.deviceId })),
+      keyEpoch: Number(h?.key_epoch ?? 1),
+      // Un appareil est parti : un administrateur doit renouveler la clé du foyer
+      rekeyNeeded: Number(h?.rekey_needed ?? 0) === 1,
     };
   });
 
@@ -217,20 +222,23 @@ export async function householdRoutes(app: FastifyInstance, opts: { db: Db; conf
       const status = await db.tx(async (query) => {
         const { rows } = await query<{ role: Role }>('SELECT role FROM devices WHERE id = $1 AND household_id = $2 AND revoked_at IS NULL', [deviceId, me.householdId]);
         if (!rows[0]) return 404;
-        // Il doit toujours rester un administrateur
+        // Un administrateur ne peut être rétrogradé que par lui-même…
+        if (role && role !== 'admin' && rows[0].role === 'admin' && deviceId !== me.deviceId) return 403;
+        // …et il doit toujours en rester un
         if (role && role !== 'admin' && rows[0].role === 'admin' && (await activeAdmins(query, me.householdId)) <= 1) return 409;
         if (name) await query('UPDATE devices SET name = $1 WHERE id = $2', [name, deviceId]);
         if (role) await query('UPDATE devices SET role = $1 WHERE id = $2', [role, deviceId]);
         return 204;
       });
       if (status === 404) return reply.code(404).send({ error: 'not_found' });
+      if (status === 403) return reply.code(403).send({ error: 'admin_protected' });
       if (status === 409) return reply.code(409).send({ error: 'last_admin' });
       return reply.code(204).send();
     },
   );
 
   /**
-   * Révoquer un appareil (administrateur) ou quitter le partage (soi-même).
+   * Révoquer un appareil (administrateur ; jamais un autre administrateur) ou quitter le partage (soi-même).
    * Le dernier appareil qui part efface le foyer du serveur.
    */
   app.delete('/v1/households/:householdId/devices/:deviceId', { schema: { params: deviceParams }, preHandler: anyDevice }, async (request, reply) => {
@@ -244,12 +252,77 @@ export async function householdRoutes(app: FastifyInstance, opts: { db: Db; conf
         await query('DELETE FROM households WHERE id = $1', [me.householdId]);
         return 204;
       }
+      // Un administrateur ne peut pas en révoquer un autre : chacun ne peut que partir de lui-même
+      if (rows[0].role === 'admin' && deviceId !== me.deviceId) return 403;
       if (rows[0].role === 'admin' && (await activeAdmins(query, me.householdId)) <= 1) return 409;
       await query('UPDATE devices SET revoked_at = $1 WHERE id = $2', [now(), deviceId]);
+      // L'appareil parti connaît la clé du foyer : elle doit être renouvelée pour les autres
+      await query('UPDATE households SET rekey_needed = 1 WHERE id = $1', [me.householdId]);
       return 204;
     });
     if (status === 404) return reply.code(404).send({ error: 'not_found' });
+    if (status === 403) return reply.code(403).send({ error: 'admin_protected' });
     if (status === 409) return reply.code(409).send({ error: 'last_admin' });
     return reply.code(204).send();
+  });
+
+  // ---------- Clé du foyer : renouvellement après un départ ----------
+
+  /**
+   * Un administrateur dépose la nouvelle clé du foyer, chiffrée séparément pour
+   * chaque appareil encore dans le partage (le serveur ne peut ouvrir aucune enveloppe).
+   */
+  app.post(
+    '/v1/households/:householdId/keys',
+    {
+      schema: {
+        params: householdParams,
+        body: {
+          type: 'object',
+          required: ['epoch', 'envelopes'],
+          additionalProperties: false,
+          properties: {
+            epoch: { type: 'integer', minimum: 2 },
+            envelopes: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 200,
+              items: { type: 'object', required: ['deviceId', 'sealedKey'], additionalProperties: false, properties: { deviceId: uuidSchema, sealedKey: sealedSchema } },
+            },
+          },
+        },
+      },
+      preHandler: admin,
+    },
+    async (request, reply) => {
+      const { epoch, envelopes } = request.body as { epoch: number; envelopes: { deviceId: string; sealedKey: string }[] };
+      const householdId = request.device!.householdId;
+      const status = await db.tx(async (query) => {
+        const h = (await query<{ key_epoch: number | string }>('SELECT key_epoch FROM households WHERE id = $1', [householdId])).rows[0];
+        if (!h || Number(h.key_epoch) + 1 !== epoch) return 'epoch_conflict';
+        const active = (await query<{ id: string }>('SELECT id FROM devices WHERE household_id = $1 AND revoked_at IS NULL', [householdId])).rows.map((r) => r.id);
+        const given = new Set(envelopes.map((e) => e.deviceId));
+        // Chaque appareil du partage doit recevoir la clé, et personne d'autre
+        if (given.size !== envelopes.length || given.size !== active.length || active.some((id) => !given.has(id))) return 'devices_changed';
+        for (const e of envelopes) {
+          await query('INSERT INTO key_envelopes (household_id, epoch, device_id, sealed_key, created_at) VALUES ($1, $2, $3, $4, $5)', [householdId, epoch, e.deviceId, e.sealedKey, now()]);
+        }
+        await query('UPDATE households SET key_epoch = $1, rekey_needed = 0 WHERE id = $2', [epoch, householdId]);
+        return 'ok';
+      });
+      if (status !== 'ok') return reply.code(409).send({ error: status });
+      return reply.code(201).send({ keyEpoch: epoch });
+    },
+  );
+
+  /** Enveloppes destinées à cet appareil (toutes les époques : il peut avoir manqué plusieurs renouvellements). */
+  app.get('/v1/households/:householdId/keys', { schema: { params: householdParams }, preHandler: anyDevice }, async (request) => {
+    const me = request.device!;
+    const h = (await db.query<{ key_epoch: number | string }>('SELECT key_epoch FROM households WHERE id = $1', [me.householdId])).rows[0];
+    const { rows } = await db.query<{ epoch: number | string; sealed_key: string }>(
+      'SELECT epoch, sealed_key FROM key_envelopes WHERE household_id = $1 AND device_id = $2 ORDER BY epoch',
+      [me.householdId, me.deviceId],
+    );
+    return { keyEpoch: Number(h?.key_epoch ?? 1), envelopes: rows.map((r) => ({ epoch: Number(r.epoch), sealedKey: r.sealed_key })) };
   });
 }
