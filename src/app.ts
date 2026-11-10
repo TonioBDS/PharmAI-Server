@@ -1,12 +1,12 @@
 import Fastify, { FastifyInstance } from 'fastify';
 import type { Config } from './config.js';
-import type { Pool } from './db.js';
+import type { Db } from './db.js';
 import { changeRoutes } from './routes/changes.js';
 import { householdRoutes } from './routes/households.js';
 
-export const VERSION = '0.1.0';
+export const VERSION = '0.2.0';
 
-export function buildApp(config: Config, pool: Pool): FastifyInstance {
+export function buildApp(config: Config, db: Db): FastifyInstance {
   const app = Fastify({
     logger: {
       level: config.logLevel,
@@ -17,12 +17,12 @@ export function buildApp(config: Config, pool: Pool): FastifyInstance {
   });
 
   app.get('/health', async () => {
-    await pool.query('SELECT 1');
-    return { status: 'ok', version: VERSION };
+    await db.query('SELECT 1 AS ok');
+    return { status: 'ok', version: VERSION, registration: config.allowRegistration };
   });
 
-  app.register(householdRoutes, { pool, config });
-  app.register(changeRoutes, { pool, config });
+  app.register(householdRoutes, { db, config });
+  app.register(changeRoutes, { db, config });
 
   return app;
 }

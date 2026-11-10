@@ -8,6 +8,8 @@ export interface Config {
   maxChangeBytes: number;
   /** Durée de validité d'une invitation, en heures. */
   inviteTtlHours: number;
+  /** Tentatives par minute et par adresse sur les routes sans jeton (création de foyer, invitation). */
+  publicRateLimit: number;
   logLevel: string;
 }
 
@@ -22,8 +24,8 @@ function int(value: string | undefined, fallback: number): number {
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const databaseUrl = env.DATABASE_URL;
-  if (!databaseUrl) throw new Error('DATABASE_URL est requis (ex. postgres://pharmai:secret@localhost:5432/pharmai)');
+  // Sans DATABASE_URL : un fichier SQLite dans DATA_DIR (auto-hébergement, rien d'autre à installer)
+  const databaseUrl = env.DATABASE_URL || `sqlite:${env.DATA_DIR ?? './data'}/pharmai.db`;
   return {
     port: int(env.PORT, 8080),
     host: env.HOST ?? '0.0.0.0',
@@ -31,6 +33,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     allowRegistration: bool(env.ALLOW_REGISTRATION, true),
     maxChangeBytes: int(env.MAX_CHANGE_BYTES, 256 * 1024),
     inviteTtlHours: int(env.INVITE_TTL_HOURS, 24),
+    publicRateLimit: int(env.PUBLIC_RATE_LIMIT, 20),
     logLevel: env.LOG_LEVEL ?? 'info',
   };
 }

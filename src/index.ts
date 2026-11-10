@@ -1,16 +1,15 @@
 import { buildApp } from './app.js';
 import { loadConfig } from './config.js';
-import { createPool, migrate } from './db.js';
+import { openDb } from './db.js';
 
 async function main() {
   const config = loadConfig();
-  const pool = createPool(config.databaseUrl);
-  await migrate(pool);
-  const app = buildApp(config, pool);
+  const db = await openDb(config.databaseUrl);
+  const app = buildApp(config, db);
 
   const shutdown = async () => {
     await app.close();
-    await pool.end();
+    await db.close();
     process.exit(0);
   };
   process.on('SIGINT', shutdown);

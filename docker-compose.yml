@@ -1,35 +1,19 @@
-# Serveur de test à domicile : `cp .env.example .env`, changez le mot de passe, puis
+# Auto-hébergement (Raspberry Pi, NAS, mini-PC) : un seul conteneur, base SQLite dans un volume.
 #   docker compose up -d --build
 # Le serveur écoute sur le port 8080 de la machine. Pour l'atteindre hors de chez vous,
 # préférez un tunnel chiffré (Tailscale, WireGuard) à l'ouverture d'un port sur la box.
+# Sauvegarde : copiez le volume « data » (fichier pharmai.db) ; son contenu est chiffré par les téléphones.
 services:
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: pharmai
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?définir POSTGRES_PASSWORD dans .env}
-      POSTGRES_DB: pharmai
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pharmai -d pharmai"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   server:
     build: .
     restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
     environment:
-      DATABASE_URL: postgres://pharmai:${POSTGRES_PASSWORD}@db:5432/pharmai
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - data:/data
     ports:
       - "${PORT:-8080}:8080"
 
 volumes:
-  pgdata:
+  data:
