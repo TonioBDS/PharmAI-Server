@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { bearer, hash, newInviteCode, newToken, randomUUID, rateLimiter, requireDevice, Role, ROLES } from '../auth.js';
+import { bearer, hash, newInviteCode, newToken, parseScopes, randomUUID, rateLimiter, requireDevice, Role, ROLES, SCOPE_PATTERN } from '../auth.js';
 import type { Config } from '../config.js';
 import { Db, iso, Query } from '../db.js';
 
@@ -7,6 +7,8 @@ const deviceNameSchema = { type: 'string', minLength: 1, maxLength: 80 } as cons
 const uuidSchema = { type: 'string', format: 'uuid' } as const;
 const roleSchema = { type: 'string', enum: [...ROLES] } as const;
 const sealedSchema = { type: 'string', minLength: 16, maxLength: 16384, pattern: '^[A-Za-z0-9+/_-]+={0,2}$' } as const;
+// Personnes partagées avec un appareil (empreintes opaques) ; null : tout le foyer, y compris les personnes ajoutées plus tard
+const scopesSchema = { anyOf: [{ type: 'null' }, { type: 'array', maxItems: 200, uniqueItems: true, items: { type: 'string', pattern: SCOPE_PATTERN } }] } as const;
 const base64Schema = { type: 'string', minLength: 16, maxLength: 512, pattern: '^[A-Za-z0-9+/_-]+={0,2}$' } as const;
 const householdParams = { type: 'object', required: ['householdId'], properties: { householdId: uuidSchema } } as const;
 const deviceParams = { type: 'object', required: ['householdId', 'deviceId'], properties: { householdId: uuidSchema, deviceId: uuidSchema } } as const;
@@ -32,6 +34,17 @@ export async function householdRoutes(app: FastifyInstance, opts: { db: Db; conf
 
   const activeAdmins = async (query: Query, householdId: string) =>
     Number((await query<{ n: number | string }>("SELECT COUNT(*) AS n FROM devices WHERE household_id = $1 AND revoked_at IS NULL AND role = 'admin'", [householdId])).rows[0].n);
+  /**
+   * Premier appareil restreint du foyer : le journal « avec portées » commence ici.
+   * Renvoie vrai si c'est maintenant (un administrateur doit alors renvoyer tout le foyer).
+   */
+  const startScoping = async (query: Query, householdId: string) =>
+    (
+      await query(
+        'UPDATE households SET scoped_since = (SELECT COALESCE(MAX(seq), 0) FROM changes WHERE household_id = $1) WHERE id = $1 AND scoped_since IS NULL',
+        [householdId],
+      )
+    ).rowCount > 0;
   const activeDevices = async (query: Query, householdId: string) =>
     Number((await query<{ n: number | string }>('SELECT COUNT(*) AS n FROM devices WHERE household_id = $1 AND revoked_at IS NULL', [householdId])).rows[0].n);
 
@@ -148,13 +161,14 @@ export async function householdRoutes(app: FastifyInstance, opts: { db: Db; conf
     {
       schema: {
         params: requestParams,
-        body: { type: 'object', required: ['role', 'sealedKey'], properties: { role: roleSchema, sealedKey: sealedSchema } },
+        body: { type: 'object', required: ['role', 'sealedKey'], properties: { role: roleSchema, sealedKey: sealedSchema, scopes: scopesSchema } },
       },
       preHandler: admin,
     },
     async (request, reply) => {
       const { requestId } = request.params as { requestId: string };
-      const { role, sealedKey } = request.body as { role: Role; sealedKey: string };
+      const { role, sealedKey, scopes } = request.body as { role: Role; sealedKey: string; scopes?: string[] | null };
+      const stored = role === 'admin' || !scopes ? null : JSON.stringify(scopes);
       const deviceId = randomUUID();
       const ok = await db.tx(async (query) => {
         const { rows } = await query<{ device_name: string; token_hash: string }>(
@@ -163,19 +177,22 @@ export async function householdRoutes(app: FastifyInstance, opts: { db: Db; conf
             RETURNING device_name, token_hash`,
           [role, sealedKey, deviceId, now(), requestId, request.device!.householdId],
         );
-        if (!rows[0]) return false;
-        await query('INSERT INTO devices (id, household_id, name, token_hash, role, created_at) VALUES ($1, $2, $3, $4, $5, $6)', [
+        if (!rows[0]) return null;
+        const snapshot = stored ? await startScoping(query, request.device!.householdId) : false;
+        await query('INSERT INTO devices (id, household_id, name, token_hash, role, created_at, scopes) VALUES ($1, $2, $3, $4, $5, $6, $7)', [
           deviceId,
           request.device!.householdId,
           rows[0].device_name,
           rows[0].token_hash,
           role,
           now(),
+          stored,
         ]);
-        return true;
+        return { snapshot };
       });
       if (!ok) return reply.code(404).send({ error: 'not_found' });
-      return reply.code(201).send({ deviceId, role });
+      // snapshotNeeded : renvoyer tout le foyer avec portées (premier appareil restreint)
+      return reply.code(201).send({ deviceId, role, snapshotNeeded: ok.snapshot });
     },
   );
 
@@ -193,31 +210,50 @@ export async function householdRoutes(app: FastifyInstance, opts: { db: Db; conf
   // ---------- Appareils ----------
 
   app.get('/v1/households/:householdId/devices', { schema: { params: householdParams }, preHandler: anyDevice }, async (request) => {
-    const { rows } = await db.query<{ id: string; name: string; role: Role; created_at: unknown; last_seen_at: unknown }>(
-      'SELECT id, name, role, created_at, last_seen_at FROM devices WHERE household_id = $1 AND revoked_at IS NULL ORDER BY created_at',
+    const { rows } = await db.query<{ id: string; name: string; role: Role; created_at: unknown; last_seen_at: unknown; scopes: string | null }>(
+      'SELECT id, name, role, created_at, last_seen_at, scopes FROM devices WHERE household_id = $1 AND revoked_at IS NULL ORDER BY created_at',
       [request.device!.householdId],
     );
-    const h = (await db.query<{ key_epoch: number | string; rekey_needed: number | string }>('SELECT key_epoch, rekey_needed FROM households WHERE id = $1', [request.device!.householdId])).rows[0];
+    const h = (
+      await db.query<{ key_epoch: number | string; rekey_needed: number | string; scoped_since: number | string | null }>(
+        'SELECT key_epoch, rekey_needed, scoped_since FROM households WHERE id = $1',
+        [request.device!.householdId],
+      )
+    ).rows[0];
     return {
-      devices: rows.map((d) => ({ id: d.id, name: d.name, role: d.role, createdAt: iso(d.created_at), lastSeenAt: iso(d.last_seen_at), current: d.id === request.device!.deviceId })),
+      devices: rows.map((d) => ({
+        id: d.id,
+        name: d.name,
+        role: d.role,
+        createdAt: iso(d.created_at),
+        lastSeenAt: iso(d.last_seen_at),
+        current: d.id === request.device!.deviceId,
+        scopes: d.role === 'admin' ? null : parseScopes(d.scopes),
+      })),
       keyEpoch: Number(h?.key_epoch ?? 1),
       // Un appareil est parti : un administrateur doit renouveler la clé du foyer
       rekeyNeeded: Number(h?.rekey_needed ?? 0) === 1,
+      // Début du journal avec portées (null : aucun appareil restreint jusqu'ici)
+      scopedSince: h?.scoped_since === null || h?.scoped_since === undefined ? null : Number(h.scoped_since),
     };
   });
 
-  /** Renommer son appareil (tous) ; changer un rôle (administrateur). */
+  /** Renommer son appareil (tous) ; changer un rôle ou les personnes partagées (administrateur). */
   app.patch(
     '/v1/households/:householdId/devices/:deviceId',
     {
-      schema: { params: deviceParams, body: { type: 'object', minProperties: 1, additionalProperties: false, properties: { name: deviceNameSchema, role: roleSchema } } },
+      schema: {
+        params: deviceParams,
+        body: { type: 'object', minProperties: 1, additionalProperties: false, properties: { name: deviceNameSchema, role: roleSchema, scopes: scopesSchema } },
+      },
       preHandler: anyDevice,
     },
     async (request, reply) => {
       const { deviceId } = request.params as { deviceId: string };
-      const { name, role } = request.body as { name?: string; role?: Role };
+      const body = request.body as { name?: string; role?: Role; scopes?: string[] | null };
+      const { name, role } = body;
       const me = request.device!;
-      if (role && me.role !== 'admin') return reply.code(403).send({ error: 'forbidden_role' });
+      if ((role || 'scopes' in body) && me.role !== 'admin') return reply.code(403).send({ error: 'forbidden_role' });
       if (name && me.role !== 'admin' && deviceId !== me.deviceId) return reply.code(403).send({ error: 'forbidden_role' });
       const status = await db.tx(async (query) => {
         const { rows } = await query<{ role: Role }>('SELECT role FROM devices WHERE id = $1 AND household_id = $2 AND revoked_at IS NULL', [deviceId, me.householdId]);
@@ -228,11 +264,19 @@ export async function householdRoutes(app: FastifyInstance, opts: { db: Db; conf
         if (role && role !== 'admin' && rows[0].role === 'admin' && (await activeAdmins(query, me.householdId)) <= 1) return 409;
         if (name) await query('UPDATE devices SET name = $1 WHERE id = $2', [name, deviceId]);
         if (role) await query('UPDATE devices SET role = $1 WHERE id = $2', [role, deviceId]);
+        // Un administrateur voit tout le foyer : ses personnes partagées sont effacées
+        const finalRole = role ?? rows[0].role;
+        if (finalRole === 'admin') await query('UPDATE devices SET scopes = NULL WHERE id = $1', [deviceId]);
+        else if ('scopes' in body) {
+          await query('UPDATE devices SET scopes = $1 WHERE id = $2', [body.scopes ? JSON.stringify(body.scopes) : null, deviceId]);
+          if (body.scopes && (await startScoping(query, me.householdId))) return 200;
+        }
         return 204;
       });
       if (status === 404) return reply.code(404).send({ error: 'not_found' });
       if (status === 403) return reply.code(403).send({ error: 'admin_protected' });
       if (status === 409) return reply.code(409).send({ error: 'last_admin' });
+      if (status === 200) return reply.code(200).send({ snapshotNeeded: true });
       return reply.code(204).send();
     },
   );
