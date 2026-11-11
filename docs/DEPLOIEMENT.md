@@ -79,7 +79,7 @@ curl http://localhost:PORT/health
 
 Puis **depuis le téléphone**, connecté au Wi-Fi de la maison, ouvrez dans le navigateur
 `http://192.168.31.40:PORT/health` (votre IP et votre port). Dans les deux cas, on doit lire
-`{"status":"ok","version":"0.3.0",…}`.
+`{"status":"ok","version":"0.4.0",…}`.
 
 Si le téléphone n'y arrive pas alors que `curl` fonctionne sur la machine :
 
