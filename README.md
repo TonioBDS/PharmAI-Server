@@ -100,17 +100,19 @@ Authentification : `Authorization: Bearer <deviceToken>`. Un appareil n'accède 
 | POST | `/v1/invites/join` | sans jeton | Dépose une demande d'ajout `{inviteCode, deviceName, publicKey}` → `requestId`, `deviceToken` (inactif jusqu'à validation) |
 | GET | `/v1/join-requests/:requestId` | demandeur | État de sa demande ; une fois validée : `deviceId`, `role`, `sealedKey` |
 | GET | `/v1/households/:id/join-requests` | admin | Demandes en attente (nom, clé publique) |
-| POST | `/v1/households/:id/join-requests/:requestId/approve` | admin | Valide `{role, sealedKey}` |
+| POST | `/v1/households/:id/join-requests/:requestId/approve` | admin | Valide `{role, sealedKey, scopes?}` (`scopes` : personnes partagées, `null` = tout le foyer) |
 | POST | `/v1/households/:id/join-requests/:requestId/reject` | admin | Refuse |
-| GET | `/v1/households/:id/devices` | tous | Appareils du foyer et leurs rôles ; `keyEpoch`, `rekeyNeeded` |
-| PATCH | `/v1/households/:id/devices/:deviceId` | soi-même (nom), admin (nom, rôle) | Renomme, change le rôle |
+| GET | `/v1/households/:id/devices` | tous | Appareils du foyer, leurs rôles et `scopes` ; `keyEpoch`, `rekeyNeeded` |
+| PATCH | `/v1/households/:id/devices/:deviceId` | soi-même (nom), admin (nom, rôle, `scopes`) | Renomme, change le rôle ou les personnes partagées |
 | DELETE | `/v1/households/:id/devices/:deviceId` | soi-même, admin | Quitte le partage, ou révoque un appareil (jamais un autre administrateur) |
 | POST | `/v1/households/:id/keys` | admin | Dépose la clé renouvelée `{epoch, envelopes: [{deviceId, sealedKey}]}` pour tous les appareils restants |
 | GET | `/v1/households/:id/keys` | tous | Enveloppes destinées à cet appareil, par époque |
-| POST | `/v1/households/:id/changes` | admin, member | Envoie jusqu'à 500 modifications chiffrées `{epoch, changes: [{id, nonce, ciphertext}]}` ; un `id` déjà reçu est ignoré ; `409 stale_epoch` si la clé a été renouvelée |
-| GET, PUT, DELETE | `/v1/households/:id/blobs/:blobId` | lecture : tous ; écriture : admin, member | Fichier chiffré `{epoch, nonce, ciphertext}` |
+| POST | `/v1/households/:id/changes` | admin, member | Envoie jusqu'à 500 modifications chiffrées `{epoch, changes: [{id, scope?, nonce, ciphertext}]}` ; un `id` déjà reçu est ignoré ; `403 forbidden_scope` hors des personnes partagées ; `409 stale_epoch` si la clé a été renouvelée |
+| GET, PUT, DELETE | `/v1/households/:id/blobs/:blobId` | lecture : tous ; écriture : admin, member | Fichier chiffré `{epoch, scope?, nonce, ciphertext}` |
 | GET | `/v1/households/:id/blobs` | tous | Identifiants des fichiers présents |
-| GET | `/v1/households/:id/changes?since=<seq>&limit=<n>` | tous | Lit le journal après le curseur `since` → `changes`, `cursor`, `hasMore` |
+| GET | `/v1/households/:id/changes?since=<seq>&limit=<n>` | tous | Lit le journal après le curseur `since` (seulement le commun et les personnes partagées) → `changes`, `cursor`, `hasMore` ; `scopes=<a,b>` ou `*` et `until=<seq>` pour rattraper des personnes nouvellement partagées |
+
+**Personnes partagées.** Une modification qui concerne une personne du foyer (prise, traitement, ordonnance) porte une `scope` : une empreinte opaque de 32 caractères calculée par les téléphones. Le serveur ne sait pas à qui elle correspond ; il se contente de ne transmettre à chaque appareil que le commun et les portées que l'administrateur lui a ouvertes.
 
 ## Licence
 

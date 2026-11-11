@@ -30,7 +30,25 @@ export interface DeviceContext {
   deviceId: string;
   householdId: string;
   role: Role;
+  /** Portées (personnes du foyer) visibles par cet appareil ; null : toutes */
+  scopes: string[] | null;
 }
+
+/** Empreinte opaque d'une personne du foyer, calculée par les téléphones */
+export const SCOPE_PATTERN = '^[a-f0-9]{32}$';
+
+export function parseScopes(value: unknown): string[] | null {
+  if (value === null || value === undefined || value === '') return null;
+  try {
+    const list = JSON.parse(String(value));
+    return Array.isArray(list) ? list.filter((s): s is string => typeof s === 'string') : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Un appareil voit-il ce qui relève de cette portée ? (null : commun à tout le foyer) */
+export const canSee = (device: DeviceContext, scope: string | null | undefined) => !scope || device.scopes === null || device.scopes.includes(scope);
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -51,8 +69,8 @@ export function requireDevice(db: Db, ...roles: Role[]) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     const token = bearer(request);
     if (!token) return reply.code(401).send({ error: 'unauthorized' });
-    const { rows } = await db.query<{ id: string; household_id: string; role: Role }>(
-      'UPDATE devices SET last_seen_at = $1 WHERE token_hash = $2 AND revoked_at IS NULL RETURNING id, household_id, role',
+    const { rows } = await db.query<{ id: string; household_id: string; role: Role; scopes: string | null }>(
+      'UPDATE devices SET last_seen_at = $1 WHERE token_hash = $2 AND revoked_at IS NULL RETURNING id, household_id, role, scopes',
       [new Date().toISOString(), hash(token)],
     );
     const device = rows[0];
@@ -62,7 +80,8 @@ export function requireDevice(db: Db, ...roles: Role[]) {
       return reply.code(403).send({ error: 'forbidden' });
     }
     if (roles.length && !roles.includes(device.role)) return reply.code(403).send({ error: 'forbidden_role' });
-    request.device = { deviceId: device.id, householdId: device.household_id, role: device.role };
+    // Un administrateur voit toujours tout le foyer
+    request.device = { deviceId: device.id, householdId: device.household_id, role: device.role, scopes: device.role === 'admin' ? null : parseScopes(device.scopes) };
   };
 }
 

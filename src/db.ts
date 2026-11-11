@@ -100,6 +100,14 @@ const PG_MIGRATIONS: string[] = [
     PRIMARY KEY (household_id, id)
   );
   `,
+  // 4 : personnes du foyer partagées avec chaque téléphone. Le serveur ne voit que des
+  //     empreintes opaques (« portées ») calculées par les téléphones, jamais les personnes.
+  `
+  ALTER TABLE devices ADD COLUMN scopes TEXT;
+  ALTER TABLE changes ADD COLUMN scope TEXT;
+  ALTER TABLE blobs ADD COLUMN scope TEXT;
+  CREATE INDEX changes_household_scope_idx ON changes(household_id, scope, seq);
+  `,
 ];
 
 const SQLITE_MIGRATIONS: string[] = [
@@ -182,6 +190,14 @@ const SQLITE_MIGRATIONS: string[] = [
     created_at TEXT NOT NULL,
     PRIMARY KEY (household_id, id)
   );
+  `,
+  // 4 : personnes du foyer partagées avec chaque téléphone. Le serveur ne voit que des
+  //     empreintes opaques (« portées ») calculées par les téléphones, jamais les personnes.
+  `
+  ALTER TABLE devices ADD COLUMN scopes TEXT;
+  ALTER TABLE changes ADD COLUMN scope TEXT;
+  ALTER TABLE blobs ADD COLUMN scope TEXT;
+  CREATE INDEX changes_household_scope_idx ON changes(household_id, scope, seq);
   `,
 ];
 

@@ -282,6 +282,63 @@ describe.each(targets)('API PharmAI (%s)', (_name, url) => {
     expect((await app.inject({ method: 'GET', url: url(a), headers: bearer(a.deviceToken) })).statusCode).toBe(404);
   });
 
+  it('ne transmet à un appareil que les personnes du foyer partagées avec lui', async () => {
+    const owner = await newHousehold();
+    const A = 'a'.repeat(32);
+    const B = 'b'.repeat(32);
+    const invite = (await app.inject({ method: 'POST', url: `/v1/households/${owner.householdId}/invites`, headers: bearer(owner.deviceToken) })).json() as { inviteCode: string };
+    const req = (await app.inject({ method: 'POST', url: '/v1/invites/join', payload: { inviteCode: invite.inviteCode, deviceName: 'Ado', publicKey: PUBLIC_KEY } })).json() as {
+      requestId: string;
+      deviceToken: string;
+    };
+    const approve = await app.inject({
+      method: 'POST',
+      url: `/v1/households/${owner.householdId}/join-requests/${req.requestId}/approve`,
+      headers: bearer(owner.deviceToken),
+      payload: { role: 'member', sealedKey: SEALED, scopes: [A] },
+    });
+    expect(approve.statusCode).toBe(201);
+    const ado = { householdId: owner.householdId, deviceToken: req.deviceToken, deviceId: (approve.json() as { deviceId: string }).deviceId };
+
+    const c = (scope?: string) => ({ id: randomUUID(), nonce: b64('nonce-de-test-24o'), ciphertext: b64('x'), ...(scope ? { scope } : {}) });
+    const common = c();
+    const forA = c(A);
+    const forB = c(B);
+    expect((await push(owner, [common, forA, forB])).statusCode).toBe(200);
+    const seen = ((await pull(ado)).json() as { changes: { id: string }[] }).changes.map((x) => x.id);
+    expect(seen).toEqual([common.id, forA.id]);
+    // Il ne peut rien écrire pour une personne non partagée
+    expect((await push(ado, [c(B)])).statusCode).toBe(403);
+    expect((await push(ado, [c(A)])).statusCode).toBe(200);
+
+    // La liste des appareils indique les personnes partagées (opaque pour le serveur)
+    const devices = (await app.inject({ method: 'GET', url: `/v1/households/${owner.householdId}/devices`, headers: bearer(owner.deviceToken) })).json() as {
+      devices: { id: string; scopes: string[] | null }[];
+    };
+    expect(devices.devices.find((d) => d.id === ado.deviceId)!.scopes).toEqual([A]);
+    expect(devices.devices.find((d) => d.id === owner.deviceId)!.scopes).toBeNull();
+
+    // Seul un administrateur change le partage ; B ajouté : rattrapage de B seulement
+    expect((await app.inject({ method: 'PATCH', url: `/v1/households/${owner.householdId}/devices/${ado.deviceId}`, headers: bearer(ado.deviceToken), payload: { scopes: null } })).statusCode).toBe(403);
+    expect(
+      (await app.inject({ method: 'PATCH', url: `/v1/households/${owner.householdId}/devices/${ado.deviceId}`, headers: bearer(owner.deviceToken), payload: { scopes: [A, B] } })).statusCode,
+    ).toBe(204);
+    const backfill = ((await pull(ado, `since=0&scopes=${B}`)).json() as { changes: { id: string }[] }).changes.map((x) => x.id);
+    expect(backfill).toEqual([forB.id]);
+    expect(((await pull(ado, 'since=0&scopes=*')).json() as { changes: unknown[] }).changes).toHaveLength(3);
+
+    // Photos d'ordonnance : invisibles hors portée
+    const blob = { nonce: b64('nonce-de-test-24o'), ciphertext: b64('photo') };
+    const id = 'c'.repeat(32);
+    await app.inject({ method: 'PUT', url: `/v1/households/${owner.householdId}/blobs/${id}`, headers: bearer(owner.deviceToken), payload: { ...blob, scope: 'd'.repeat(32) } });
+    expect((await app.inject({ method: 'GET', url: `/v1/households/${owner.householdId}/blobs/${id}`, headers: bearer(ado.deviceToken) })).statusCode).toBe(404);
+    expect(((await app.inject({ method: 'GET', url: `/v1/households/${owner.householdId}/blobs`, headers: bearer(ado.deviceToken) })).json() as { ids: string[] }).ids).not.toContain(id);
+
+    // Promu administrateur : tout le foyer
+    await app.inject({ method: 'PATCH', url: `/v1/households/${owner.householdId}/devices/${ado.deviceId}`, headers: bearer(owner.deviceToken), payload: { role: 'admin' } });
+    expect(((await pull(ado)).json() as { changes: unknown[] }).changes.length).toBeGreaterThanOrEqual(4);
+  });
+
   it('peut fermer les inscriptions et limite les tentatives sans jeton', async () => {
     const closed = buildApp(loadConfig({ ...env, ALLOW_REGISTRATION: 'false' }), db);
     expect((await closed.inject({ method: 'POST', url: '/v1/households', payload: { deviceName: 'x' } })).statusCode).toBe(403);
