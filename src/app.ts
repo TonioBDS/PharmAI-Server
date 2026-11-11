@@ -5,7 +5,7 @@ import { blobRoutes } from './routes/blobs.js';
 import { changeRoutes } from './routes/changes.js';
 import { householdRoutes } from './routes/households.js';
 
-export const VERSION = '0.3.0';
+export const VERSION = '0.4.0';
 
 export function buildApp(config: Config, db: Db): FastifyInstance {
   const app = Fastify({
