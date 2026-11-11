@@ -112,7 +112,7 @@ Authentification : `Authorization: Bearer <deviceToken>`. Un appareil n'accède 
 | GET | `/v1/households/:id/blobs` | tous | Identifiants des fichiers présents |
 | GET | `/v1/households/:id/changes?since=<seq>&limit=<n>` | tous | Lit le journal après le curseur `since` (seulement le commun et les personnes partagées) → `changes`, `cursor`, `hasMore` ; `scopes=<a,b>` ou `*` et `until=<seq>` pour rattraper des personnes nouvellement partagées |
 
-**Personnes partagées.** Une modification qui concerne une personne du foyer (prise, traitement, ordonnance) porte une `scope` : une empreinte opaque de 32 caractères calculée par les téléphones. Le serveur ne sait pas à qui elle correspond ; il se contente de ne transmettre à chaque appareil que le commun et les portées que l'administrateur lui a ouvertes.
+**Personnes partagées.** Une modification qui concerne une personne du foyer (prise, traitement, ordonnance) porte une `scope` : une empreinte opaque de 32 caractères calculée par les téléphones. Le serveur ne sait pas à qui elle correspond ; il se contente de ne transmettre à chaque appareil que le commun et les portées que l'administrateur lui a ouvertes. Au premier appareil restreint, le serveur note où commence le journal « avec portées » (`scopedSince`, renvoyé avec la liste des appareils ; `snapshotNeeded` à la validation) : un appareil restreint ne lit rien d'antérieur, et l'administrateur renvoie alors tout le foyer, cette fois avec portées.
 
 ## Licence
 

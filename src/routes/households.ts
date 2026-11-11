@@ -34,6 +34,17 @@ export async function householdRoutes(app: FastifyInstance, opts: { db: Db; conf
 
   const activeAdmins = async (query: Query, householdId: string) =>
     Number((await query<{ n: number | string }>("SELECT COUNT(*) AS n FROM devices WHERE household_id = $1 AND revoked_at IS NULL AND role = 'admin'", [householdId])).rows[0].n);
+  /**
+   * Premier appareil restreint du foyer : le journal « avec portées » commence ici.
+   * Renvoie vrai si c'est maintenant (un administrateur doit alors renvoyer tout le foyer).
+   */
+  const startScoping = async (query: Query, householdId: string) =>
+    (
+      await query(
+        'UPDATE households SET scoped_since = (SELECT COALESCE(MAX(seq), 0) FROM changes WHERE household_id = $1) WHERE id = $1 AND scoped_since IS NULL',
+        [householdId],
+      )
+    ).rowCount > 0;
   const activeDevices = async (query: Query, householdId: string) =>
     Number((await query<{ n: number | string }>('SELECT COUNT(*) AS n FROM devices WHERE household_id = $1 AND revoked_at IS NULL', [householdId])).rows[0].n);
 
@@ -166,7 +177,8 @@ export async function householdRoutes(app: FastifyInstance, opts: { db: Db; conf
             RETURNING device_name, token_hash`,
           [role, sealedKey, deviceId, now(), requestId, request.device!.householdId],
         );
-        if (!rows[0]) return false;
+        if (!rows[0]) return null;
+        const snapshot = stored ? await startScoping(query, request.device!.householdId) : false;
         await query('INSERT INTO devices (id, household_id, name, token_hash, role, created_at, scopes) VALUES ($1, $2, $3, $4, $5, $6, $7)', [
           deviceId,
           request.device!.householdId,
@@ -176,10 +188,11 @@ export async function householdRoutes(app: FastifyInstance, opts: { db: Db; conf
           now(),
           stored,
         ]);
-        return true;
+        return { snapshot };
       });
       if (!ok) return reply.code(404).send({ error: 'not_found' });
-      return reply.code(201).send({ deviceId, role });
+      // snapshotNeeded : renvoyer tout le foyer avec portées (premier appareil restreint)
+      return reply.code(201).send({ deviceId, role, snapshotNeeded: ok.snapshot });
     },
   );
 
@@ -201,7 +214,12 @@ export async function householdRoutes(app: FastifyInstance, opts: { db: Db; conf
       'SELECT id, name, role, created_at, last_seen_at, scopes FROM devices WHERE household_id = $1 AND revoked_at IS NULL ORDER BY created_at',
       [request.device!.householdId],
     );
-    const h = (await db.query<{ key_epoch: number | string; rekey_needed: number | string }>('SELECT key_epoch, rekey_needed FROM households WHERE id = $1', [request.device!.householdId])).rows[0];
+    const h = (
+      await db.query<{ key_epoch: number | string; rekey_needed: number | string; scoped_since: number | string | null }>(
+        'SELECT key_epoch, rekey_needed, scoped_since FROM households WHERE id = $1',
+        [request.device!.householdId],
+      )
+    ).rows[0];
     return {
       devices: rows.map((d) => ({
         id: d.id,
@@ -215,6 +233,8 @@ export async function householdRoutes(app: FastifyInstance, opts: { db: Db; conf
       keyEpoch: Number(h?.key_epoch ?? 1),
       // Un appareil est parti : un administrateur doit renouveler la clé du foyer
       rekeyNeeded: Number(h?.rekey_needed ?? 0) === 1,
+      // Début du journal avec portées (null : aucun appareil restreint jusqu'ici)
+      scopedSince: h?.scoped_since === null || h?.scoped_since === undefined ? null : Number(h.scoped_since),
     };
   });
 
@@ -247,12 +267,16 @@ export async function householdRoutes(app: FastifyInstance, opts: { db: Db; conf
         // Un administrateur voit tout le foyer : ses personnes partagées sont effacées
         const finalRole = role ?? rows[0].role;
         if (finalRole === 'admin') await query('UPDATE devices SET scopes = NULL WHERE id = $1', [deviceId]);
-        else if ('scopes' in body) await query('UPDATE devices SET scopes = $1 WHERE id = $2', [body.scopes ? JSON.stringify(body.scopes) : null, deviceId]);
+        else if ('scopes' in body) {
+          await query('UPDATE devices SET scopes = $1 WHERE id = $2', [body.scopes ? JSON.stringify(body.scopes) : null, deviceId]);
+          if (body.scopes && (await startScoping(query, me.householdId))) return 200;
+        }
         return 204;
       });
       if (status === 404) return reply.code(404).send({ error: 'not_found' });
       if (status === 403) return reply.code(403).send({ error: 'admin_protected' });
       if (status === 409) return reply.code(409).send({ error: 'last_admin' });
+      if (status === 200) return reply.code(200).send({ snapshotNeeded: true });
       return reply.code(204).send();
     },
   );

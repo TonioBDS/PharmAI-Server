@@ -107,6 +107,9 @@ const PG_MIGRATIONS: string[] = [
   ALTER TABLE changes ADD COLUMN scope TEXT;
   ALTER TABLE blobs ADD COLUMN scope TEXT;
   CREATE INDEX changes_household_scope_idx ON changes(household_id, scope, seq);
+  -- Début du journal « avec portées » : avant, les modifications n'en avaient pas ; un appareil
+  -- restreint ne lit que la suite (l'administrateur y renvoie tout le foyer, avec portées)
+  ALTER TABLE households ADD COLUMN scoped_since BIGINT;
   `,
 ];
 
@@ -198,6 +201,9 @@ const SQLITE_MIGRATIONS: string[] = [
   ALTER TABLE changes ADD COLUMN scope TEXT;
   ALTER TABLE blobs ADD COLUMN scope TEXT;
   CREATE INDEX changes_household_scope_idx ON changes(household_id, scope, seq);
+  -- Début du journal « avec portées » : avant, les modifications n'en avaient pas ; un appareil
+  -- restreint ne lit que la suite (l'administrateur y renvoie tout le foyer, avec portées)
+  ALTER TABLE households ADD COLUMN scoped_since INTEGER;
   `,
 ];
 

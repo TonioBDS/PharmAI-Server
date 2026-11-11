@@ -286,6 +286,9 @@ describe.each(targets)('API PharmAI (%s)', (_name, url) => {
     const owner = await newHousehold();
     const A = 'a'.repeat(32);
     const B = 'b'.repeat(32);
+    // Journal d'avant les portées : jamais lu par un appareil restreint
+    const legacy = { id: randomUUID(), nonce: b64('nonce-de-test-24o'), ciphertext: b64('ancien') };
+    await push(owner, [legacy]);
     const invite = (await app.inject({ method: 'POST', url: `/v1/households/${owner.householdId}/invites`, headers: bearer(owner.deviceToken) })).json() as { inviteCode: string };
     const req = (await app.inject({ method: 'POST', url: '/v1/invites/join', payload: { inviteCode: invite.inviteCode, deviceName: 'Ado', publicKey: PUBLIC_KEY } })).json() as {
       requestId: string;
@@ -298,6 +301,7 @@ describe.each(targets)('API PharmAI (%s)', (_name, url) => {
       payload: { role: 'member', sealedKey: SEALED, scopes: [A] },
     });
     expect(approve.statusCode).toBe(201);
+    expect(approve.json()).toMatchObject({ snapshotNeeded: true });
     const ado = { householdId: owner.householdId, deviceToken: req.deviceToken, deviceId: (approve.json() as { deviceId: string }).deviceId };
 
     const c = (scope?: string) => ({ id: randomUUID(), nonce: b64('nonce-de-test-24o'), ciphertext: b64('x'), ...(scope ? { scope } : {}) });
@@ -326,6 +330,7 @@ describe.each(targets)('API PharmAI (%s)', (_name, url) => {
     const backfill = ((await pull(ado, `since=0&scopes=${B}`)).json() as { changes: { id: string }[] }).changes.map((x) => x.id);
     expect(backfill).toEqual([forB.id]);
     expect(((await pull(ado, 'since=0&scopes=*')).json() as { changes: unknown[] }).changes).toHaveLength(3);
+    expect(((await pull(owner)).json() as { changes: { id: string }[] }).changes[0].id).toBe(legacy.id);
 
     // Photos d'ordonnance : invisibles hors portée
     const blob = { nonce: b64('nonce-de-test-24o'), ciphertext: b64('photo') };

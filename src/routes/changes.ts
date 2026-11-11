@@ -110,7 +110,11 @@ export async function changeRoutes(app: FastifyInstance, opts: { db: Db; config:
       const where: string[] = [];
       const inList = (list: string[]) => list.map((s) => `$${params.push(s)}`).join(', ');
       // Ce que l'appareil a le droit de voir : le commun et les personnes partagées
-      if (device.scopes !== null) where.push(device.scopes.length ? `(scope IS NULL OR scope IN (${inList(device.scopes)}))` : 'scope IS NULL');
+      if (device.scopes !== null) {
+        where.push(device.scopes.length ? `(scope IS NULL OR scope IN (${inList(device.scopes)}))` : 'scope IS NULL');
+        // Journal antérieur aux portées : illisible pour un appareil restreint (tout y a été renvoyé ensuite)
+        where.push('seq > COALESCE((SELECT scoped_since FROM households WHERE id = $1), 0)');
+      }
       if (scopes === '*') where.push('scope IS NOT NULL');
       else if (scopes) where.push(`scope IN (${inList(scopes.split(','))})`);
       if (until !== undefined) where.push(`seq <= $${params.push(until)}`);
