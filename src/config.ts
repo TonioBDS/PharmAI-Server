@@ -12,6 +12,11 @@ export interface Config {
   inviteTtlHours: number;
   /** Tentatives par minute et par adresse sur les routes sans jeton (création de foyer, invitation). */
   publicRateLimit: number;
+  /**
+   * Foyers sans aucune connexion depuis ce nombre de jours : effacés du serveur
+   * (les téléphones gardent leurs données). 0 : jamais (par défaut).
+   */
+  inactiveDays: number;
   logLevel: string;
 }
 
@@ -37,6 +42,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     maxBlobBytes: int(env.MAX_BLOB_BYTES, 3 * 1024 * 1024),
     inviteTtlHours: int(env.INVITE_TTL_HOURS, 24),
     publicRateLimit: int(env.PUBLIC_RATE_LIMIT, 20),
+    inactiveDays: int(env.INACTIVE_DAYS, 0),
     logLevel: env.LOG_LEVEL ?? 'info',
   };
 }

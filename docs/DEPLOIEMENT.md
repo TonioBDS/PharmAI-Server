@@ -13,7 +13,7 @@ docker compose version    # le plugin « compose » (v2)
 ```
 
 Notez l'adresse IP **complète** de la machine sur le réseau de la maison (quatre nombres,
-par exemple `192.168.31.40`) :
+par exemple `192.168.1.20`) :
 
 ```bash
 hostname -I
@@ -36,14 +36,15 @@ doit rien afficher). Dans la suite, ce port est noté **PORT**.
 
 ## 3. Récupérer le code
 
-Le dépôt est privé : utilisez votre compte GitHub (`gh auth login`, ou un jeton d'accès
-personnel en guise de mot de passe).
-
 ```bash
 cd ~
 git clone https://github.com/TonioBDS/PharmAI-Server.git pharmai-server
 cd pharmai-server
 ```
+
+Sans `git` : seul le fichier `docker-compose.yml` est nécessaire (l'image est publiée sur
+`ghcr.io/toniobds/pharmai-server`) ; créez le dossier et téléchargez-le :
+`mkdir -p ~/pharmai-server && cd ~/pharmai-server && curl -O https://raw.githubusercontent.com/TonioBDS/PharmAI-Server/main/docker-compose.yml`.
 
 ## 4. Régler et démarrer
 
@@ -78,12 +79,12 @@ curl http://localhost:PORT/health
 ```
 
 Puis **depuis le téléphone**, connecté au Wi-Fi de la maison, ouvrez dans le navigateur
-`http://192.168.31.40:PORT/health` (votre IP et votre port). Dans les deux cas, on doit lire
-`{"status":"ok","version":"0.4.0",…}`.
+`http://192.168.1.20:PORT/health` (votre IP et votre port). Dans les deux cas, on doit lire
+`{"status":"ok","version":"0.5.0",…}`.
 
 Si le téléphone n'y arrive pas alors que `curl` fonctionne sur la machine :
 
-- pare-feu de la VM : `sudo ufw status` ; si actif, `sudo ufw allow PORT/tcp` ;
+- pare-feu de la machine : `sudo ufw status` ; si actif, `sudo ufw allow PORT/tcp` ;
 - VM en réseau « NAT » : passez sa carte réseau en mode « pont » (bridge), pour qu'elle ait
   une adresse sur le réseau de la maison ;
 - Wi-Fi « invités » du téléphone : il est souvent isolé du reste du réseau.
@@ -91,11 +92,17 @@ Si le téléphone n'y arrive pas alors que `curl` fonctionne sur la machine :
 ## 6. Créer le partage dans l'app
 
 Sur votre téléphone : Réglages › Partage › Créer un partage, adresse
-`192.168.31.40:PORT` (sans `http://`, l'app l'ajoute). Puis invitez les autres téléphones
-(voir le plan de tests).
+`192.168.1.20:PORT` (sans `http://`, l'app l'ajoute). Puis invitez les autres téléphones
+(Réglages › Partage › Inviter un téléphone).
 
-Astuce : réservez l'adresse IP de la VM dans votre box (bail DHCP fixe), sinon elle peut
+Astuce : réservez l'adresse IP de la machine dans votre box (bail DHCP fixe), sinon elle peut
 changer et les téléphones ne trouveront plus le serveur.
+
+**Kit de secours.** À la création du partage, l'app affiche un code et son QR code :
+imprimez-le ou gardez-le dans un gestionnaire de mots de passe. Si le téléphone
+administrateur est perdu, un nouveau téléphone retrouve tout le partage avec ce kit
+(écran Partage › Restaurer avec le kit de secours). Sans kit et sans autre administrateur,
+le partage ne peut plus être administré (les données restent sur les autres téléphones).
 
 ## 7. Fermer les inscriptions
 
@@ -113,7 +120,7 @@ Les téléphones déjà dans le partage et les invitations continuent de fonctio
 | Pour… | Commande (dans `~/pharmai-server`) |
 | --- | --- |
 | Voir les journaux | `docker compose logs -f --tail=100` |
-| Mettre à jour | `git pull && docker compose up -d --build` |
+| Mettre à jour | `git pull && docker compose up -d --build` (ou, sans le code : `docker compose pull && docker compose up -d`) |
 | Arrêter / relancer | `docker compose stop` / `docker compose start` |
 | Sauvegarder | `docker run --rm -v pharmai_data:/data -v "$PWD":/backup alpine tar czf /backup/pharmai-$(date +%F).tgz -C /data .` |
 | Restaurer | `docker compose stop && docker run --rm -v pharmai_data:/data -v "$PWD":/backup alpine sh -c "rm -rf /data/* && tar xzf /backup/pharmai-AAAA-MM-JJ.tgz -C /data" && docker compose start` |
@@ -123,11 +130,15 @@ partage, personne ne peut la lire.
 
 Le conteneur redémarre tout seul avec la machine (`restart: unless-stopped`).
 
+Partages abandonnés : avec `INACTIVE_DAYS=365` dans `.env`, un partage dont aucun téléphone
+ne s'est connecté depuis un an est effacé du serveur (les téléphones gardent leurs données ;
+l'app prévient un mois avant). Par défaut, rien n'est jamais effacé.
+
 ## 9. Hors de la maison (facultatif)
 
 Sans rien de plus, les téléphones se synchronisent quand ils sont sur le Wi-Fi de la maison,
 et gardent leurs modifications en attendant. Pour synchroniser de partout, installez un
-tunnel chiffré (Tailscale ou WireGuard) sur la VM et les téléphones, et utilisez l'adresse
+tunnel chiffré (Tailscale ou WireGuard) sur la machine et les téléphones, et utilisez l'adresse
 du tunnel dans l'app. N'ouvrez pas le port sur la box.
 
 ## Si vous utilisez Portainer

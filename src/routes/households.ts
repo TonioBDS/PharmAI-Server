@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { bearer, hash, newInviteCode, newToken, parseScopes, randomUUID, rateLimiter, requireDevice, Role, ROLES, SCOPE_PATTERN } from '../auth.js';
 import type { Config } from '../config.js';
+import { deleteAfter } from '../cleanup.js';
 import { Db, iso, Query } from '../db.js';
 
 const deviceNameSchema = { type: 'string', minLength: 1, maxLength: 80 } as const;
@@ -9,6 +10,8 @@ const roleSchema = { type: 'string', enum: [...ROLES] } as const;
 const sealedSchema = { type: 'string', minLength: 16, maxLength: 16384, pattern: '^[A-Za-z0-9+/_-]+={0,2}$' } as const;
 // Personnes partagées avec un appareil (empreintes opaques) ; null : tout le foyer, y compris les personnes ajoutées plus tard
 const scopesSchema = { anyOf: [{ type: 'null' }, { type: 'array', maxItems: 200, uniqueItems: true, items: { type: 'string', pattern: SCOPE_PATTERN } }] } as const;
+// Code de secours dérivé sur le téléphone (64 caractères hexadécimaux) : seul son haché est gardé
+const recoveryTokenSchema = { type: 'string', pattern: '^[a-f0-9]{64}$' } as const;
 const base64Schema = { type: 'string', minLength: 16, maxLength: 512, pattern: '^[A-Za-z0-9+/_-]+={0,2}$' } as const;
 const householdParams = { type: 'object', required: ['householdId'], properties: { householdId: uuidSchema } } as const;
 const deviceParams = { type: 'object', required: ['householdId', 'deviceId'], properties: { householdId: uuidSchema, deviceId: uuidSchema } } as const;
@@ -215,8 +218,8 @@ export async function householdRoutes(app: FastifyInstance, opts: { db: Db; conf
       [request.device!.householdId],
     );
     const h = (
-      await db.query<{ key_epoch: number | string; rekey_needed: number | string; scoped_since: number | string | null }>(
-        'SELECT key_epoch, rekey_needed, scoped_since FROM households WHERE id = $1',
+      await db.query<{ key_epoch: number | string; rekey_needed: number | string; scoped_since: number | string | null; recovery_hash: string | null }>(
+        'SELECT key_epoch, rekey_needed, scoped_since, recovery_hash FROM households WHERE id = $1',
         [request.device!.householdId],
       )
     ).rows[0];
@@ -235,8 +238,69 @@ export async function householdRoutes(app: FastifyInstance, opts: { db: Db; conf
       rekeyNeeded: Number(h?.rekey_needed ?? 0) === 1,
       // Début du journal avec portées (null : aucun appareil restreint jusqu'ici)
       scopedSince: h?.scoped_since === null || h?.scoped_since === undefined ? null : Number(h.scoped_since),
+      // Kit de secours enregistré pour ce foyer
+      recovery: !!h?.recovery_hash,
+      // Sans nouvelle connexion d'ici là, le partage sera effacé du serveur (null : jamais)
+      deleteAfter: deleteAfter(new Date().toISOString(), config.inactiveDays),
     };
   });
+
+  // ---------- Kit de secours ----------
+
+  /**
+   * Un administrateur enregistre le kit de secours : le haché d'un jeton dérivé du
+   * code de secours, et le trousseau du foyer scellé pour une clé publique dérivée
+   * du même code. Le serveur ne peut ni ouvrir l'enveloppe ni retrouver le code.
+   */
+  app.put(
+    '/v1/households/:householdId/recovery',
+    {
+      schema: {
+        params: householdParams,
+        body: { type: 'object', required: ['token', 'envelope'], additionalProperties: false, properties: { token: recoveryTokenSchema, envelope: sealedSchema } },
+      },
+      preHandler: admin,
+    },
+    async (request, reply) => {
+      const { token, envelope } = request.body as { token: string; envelope: string };
+      await db.query('UPDATE households SET recovery_hash = $1, recovery_envelope = $2 WHERE id = $3', [hash(token), envelope, request.device!.householdId]);
+      return reply.code(204).send();
+    },
+  );
+
+  /**
+   * Restauration avec le kit de secours (tous les administrateurs perdus) : un nouvel
+   * appareil administrateur est créé, les anciens administrateurs sont retirés (le
+   * téléphone perdu ne peut plus rien faire) et la clé du foyer devra être renouvelée.
+   */
+  app.post(
+    '/v1/recover',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['token', 'deviceName'],
+          additionalProperties: false,
+          properties: { token: recoveryTokenSchema, deviceName: deviceNameSchema },
+        },
+      },
+      preHandler: limit,
+    },
+    async (request, reply) => {
+      const { token, deviceName } = request.body as { token: string; deviceName: string };
+      const h = (await db.query<{ id: string; recovery_envelope: string; key_epoch: number | string }>('SELECT id, recovery_envelope, key_epoch FROM households WHERE recovery_hash = $1', [hash(token)]))
+        .rows[0];
+      if (!h) return reply.code(404).send({ error: 'not_found' });
+      const deviceId = randomUUID();
+      const deviceToken = newToken();
+      await db.tx(async (query) => {
+        await query("UPDATE devices SET revoked_at = $1 WHERE household_id = $2 AND role = 'admin' AND revoked_at IS NULL", [now(), h.id]);
+        await query("INSERT INTO devices (id, household_id, name, token_hash, role, created_at) VALUES ($1, $2, $3, $4, 'admin', $5)", [deviceId, h.id, deviceName, hash(deviceToken), now()]);
+        await query('UPDATE households SET rekey_needed = 1 WHERE id = $1', [h.id]);
+      });
+      return reply.code(201).send({ householdId: h.id, deviceId, deviceToken, role: 'admin', envelope: h.recovery_envelope, keyEpoch: Number(h.key_epoch) });
+    },
+  );
 
   /** Renommer son appareil (tous) ; changer un rôle ou les personnes partagées (administrateur). */
   app.patch(
@@ -327,6 +391,8 @@ export async function householdRoutes(app: FastifyInstance, opts: { db: Db; conf
           additionalProperties: false,
           properties: {
             epoch: { type: 'integer', minimum: 2 },
+            // Trousseau à jour scellé pour la clé de secours (si le foyer a un kit)
+            recoveryEnvelope: sealedSchema,
             envelopes: {
               type: 'array',
               minItems: 1,
@@ -339,7 +405,7 @@ export async function householdRoutes(app: FastifyInstance, opts: { db: Db; conf
       preHandler: admin,
     },
     async (request, reply) => {
-      const { epoch, envelopes } = request.body as { epoch: number; envelopes: { deviceId: string; sealedKey: string }[] };
+      const { epoch, envelopes, recoveryEnvelope } = request.body as { epoch: number; envelopes: { deviceId: string; sealedKey: string }[]; recoveryEnvelope?: string };
       const householdId = request.device!.householdId;
       const status = await db.tx(async (query) => {
         const h = (await query<{ key_epoch: number | string }>('SELECT key_epoch FROM households WHERE id = $1', [householdId])).rows[0];
@@ -352,6 +418,7 @@ export async function householdRoutes(app: FastifyInstance, opts: { db: Db; conf
           await query('INSERT INTO key_envelopes (household_id, epoch, device_id, sealed_key, created_at) VALUES ($1, $2, $3, $4, $5)', [householdId, epoch, e.deviceId, e.sealedKey, now()]);
         }
         await query('UPDATE households SET key_epoch = $1, rekey_needed = 0 WHERE id = $2', [epoch, householdId]);
+        if (recoveryEnvelope) await query('UPDATE households SET recovery_envelope = $1 WHERE id = $2', [recoveryEnvelope, householdId]);
         return 'ok';
       });
       if (status !== 'ok') return reply.code(409).send({ error: status });
