@@ -13,7 +13,7 @@ docker compose version    # le plugin « compose » (v2)
 ```
 
 Notez l'adresse IP **complète** de la machine sur le réseau de la maison (quatre nombres,
-par exemple `192.168.31.40`) :
+par exemple `192.168.1.20`) :
 
 ```bash
 hostname -I
@@ -79,12 +79,12 @@ curl http://localhost:PORT/health
 ```
 
 Puis **depuis le téléphone**, connecté au Wi-Fi de la maison, ouvrez dans le navigateur
-`http://192.168.31.40:PORT/health` (votre IP et votre port). Dans les deux cas, on doit lire
+`http://192.168.1.20:PORT/health` (votre IP et votre port). Dans les deux cas, on doit lire
 `{"status":"ok","version":"0.5.0",…}`.
 
 Si le téléphone n'y arrive pas alors que `curl` fonctionne sur la machine :
 
-- pare-feu de la VM : `sudo ufw status` ; si actif, `sudo ufw allow PORT/tcp` ;
+- pare-feu de la machine : `sudo ufw status` ; si actif, `sudo ufw allow PORT/tcp` ;
 - VM en réseau « NAT » : passez sa carte réseau en mode « pont » (bridge), pour qu'elle ait
   une adresse sur le réseau de la maison ;
 - Wi-Fi « invités » du téléphone : il est souvent isolé du reste du réseau.
@@ -92,10 +92,10 @@ Si le téléphone n'y arrive pas alors que `curl` fonctionne sur la machine :
 ## 6. Créer le partage dans l'app
 
 Sur votre téléphone : Réglages › Partage › Créer un partage, adresse
-`192.168.31.40:PORT` (sans `http://`, l'app l'ajoute). Puis invitez les autres téléphones
-(voir le plan de tests).
+`192.168.1.20:PORT` (sans `http://`, l'app l'ajoute). Puis invitez les autres téléphones
+(Réglages › Partage › Inviter un téléphone).
 
-Astuce : réservez l'adresse IP de la VM dans votre box (bail DHCP fixe), sinon elle peut
+Astuce : réservez l'adresse IP de la machine dans votre box (bail DHCP fixe), sinon elle peut
 changer et les téléphones ne trouveront plus le serveur.
 
 **Kit de secours.** À la création du partage, l'app affiche un code et son QR code :
@@ -138,7 +138,7 @@ l'app prévient un mois avant). Par défaut, rien n'est jamais effacé.
 
 Sans rien de plus, les téléphones se synchronisent quand ils sont sur le Wi-Fi de la maison,
 et gardent leurs modifications en attendant. Pour synchroniser de partout, installez un
-tunnel chiffré (Tailscale ou WireGuard) sur la VM et les téléphones, et utilisez l'adresse
+tunnel chiffré (Tailscale ou WireGuard) sur la machine et les téléphones, et utilisez l'adresse
 du tunnel dans l'app. N'ouvrez pas le port sur la box.
 
 ## Si vous utilisez Portainer
