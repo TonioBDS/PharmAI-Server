@@ -1,0 +1,5 @@
+# Site GitHub Pages du projet (Settings › Pages › Deploy from a branch › main › /docs)
+title: PharmAI
+description: Armoire à pharmacie sur votre téléphone · serveur de partage libre
+theme: jekyll-theme-primer
+lang: fr
