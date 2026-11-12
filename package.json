@@ -1,6 +1,6 @@
 {
   "name": "pharmai-server",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Serveur de synchronisation chiffrée de bout en bout pour PharmAI",
   "main": "dist/index.js",
   "scripts": {

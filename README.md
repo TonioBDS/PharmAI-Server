@@ -15,9 +15,12 @@ si vous proposez une version modifiée à d'autres via un réseau, vous devez en
 Un seul conteneur, base **SQLite** dans un volume : convient à un Raspberry Pi, un NAS ou un mini-PC.
 
 ```bash
-docker compose up -d --build
+curl -O https://raw.githubusercontent.com/TonioBDS/PharmAI-Server/main/docker-compose.yml
+docker compose up -d          # image publiée : ghcr.io/toniobds/pharmai-server
 curl http://localhost:8080/health
 ```
+
+Ou depuis le code : `git clone` de ce dépôt, puis `docker compose up -d --build`.
 
 Dans l'app : Réglages → Partage → « Créer un partage », avec l'adresse du serveur
 (ex. `http://192.168.1.20:8080`). Une fois votre foyer créé, passez `ALLOW_REGISTRATION=false`
@@ -68,6 +71,19 @@ circulent entre téléphones dans le journal chiffré. Limite connue : à l'ajou
 l'administrateur qui vérifie le nouveau (code de vérification) ; le nouveau, lui, fait confiance au
 serveur pour lui remettre le trousseau scellé par l'administrateur.
 
+### Kit de secours
+
+À la création d'un partage, l'app propose un **kit de secours** : un code (et son QR code)
+à imprimer ou garder dans un gestionnaire de mots de passe. Il sert si le dernier téléphone
+administrateur est perdu : sur un nouveau téléphone, « Restaurer avec le kit de secours »
+redonne un administrateur et toute l'armoire.
+
+Le téléphone dérive du code deux choses : un jeton (le serveur n'en garde que le haché) et
+une paire de clés, dont la clé publique sert à sceller le trousseau du foyer. Le serveur
+garde cette enveloppe sans pouvoir l'ouvrir. À la restauration, les anciens administrateurs
+sont retirés (le téléphone perdu ne peut plus rien faire) et la clé du foyer est renouvelée.
+Un nouveau kit rend l'ancien inutilisable.
+
 ### Photos
 
 Les photos (produits, ordonnances) sont envoyées chiffrées, sous un identifiant opaque
@@ -85,7 +101,7 @@ npm run dev                                                               # SQLi
 
 Variables : `DATABASE_URL` (`postgres://…` ou `sqlite:/chemin/fichier.db` ; par défaut SQLite dans `DATA_DIR`),
 `DATA_DIR` (`./data`, `/data` dans l'image), `PORT` (8080), `HOST` (0.0.0.0), `ALLOW_REGISTRATION` (true),
-`MAX_CHANGE_BYTES` (262144), `MAX_BLOB_BYTES` (3145728), `INVITE_TTL_HOURS` (24), `PUBLIC_RATE_LIMIT` (20 par minute et par adresse), `LOG_LEVEL` (info).
+`MAX_CHANGE_BYTES` (262144), `MAX_BLOB_BYTES` (3145728), `INVITE_TTL_HOURS` (24), `PUBLIC_RATE_LIMIT` (20 par minute et par adresse), `INACTIVE_DAYS` (0 : jamais ; sinon les partages sans aucune connexion depuis ce nombre de jours sont effacés du serveur, les téléphones gardant leurs données), `LOG_LEVEL` (info).
 
 ## API v1
 
@@ -98,14 +114,16 @@ Authentification : `Authorization: Bearer <deviceToken>`. Un appareil n'accède 
 | DELETE | `/v1/households/:id` | admin | Arrête le partage : efface le foyer du serveur |
 | POST | `/v1/households/:id/invites` | admin | Crée un code d'invitation à usage unique |
 | POST | `/v1/invites/join` | sans jeton | Dépose une demande d'ajout `{inviteCode, deviceName, publicKey}` → `requestId`, `deviceToken` (inactif jusqu'à validation) |
+| PUT | `/v1/households/:id/recovery` | admin | Enregistre le kit de secours `{token, envelope}` (haché du jeton ; trousseau scellé pour la clé de secours) |
+| POST | `/v1/recover` | sans jeton | Restaure un administrateur avec le kit `{token, deviceName}` → `householdId`, `deviceToken`, `envelope` ; retire les anciens administrateurs |
 | GET | `/v1/join-requests/:requestId` | demandeur | État de sa demande ; une fois validée : `deviceId`, `role`, `sealedKey` |
 | GET | `/v1/households/:id/join-requests` | admin | Demandes en attente (nom, clé publique) |
 | POST | `/v1/households/:id/join-requests/:requestId/approve` | admin | Valide `{role, sealedKey, scopes?}` (`scopes` : personnes partagées, `null` = tout le foyer) |
 | POST | `/v1/households/:id/join-requests/:requestId/reject` | admin | Refuse |
-| GET | `/v1/households/:id/devices` | tous | Appareils du foyer, leurs rôles et `scopes` ; `keyEpoch`, `rekeyNeeded` |
+| GET | `/v1/households/:id/devices` | tous | Appareils du foyer, leurs rôles et `scopes` ; `keyEpoch`, `rekeyNeeded`, `recovery` (kit enregistré), `deleteAfter` (date d'effacement sans nouvelle connexion, si `INACTIVE_DAYS`) |
 | PATCH | `/v1/households/:id/devices/:deviceId` | soi-même (nom), admin (nom, rôle, `scopes`) | Renomme, change le rôle ou les personnes partagées |
 | DELETE | `/v1/households/:id/devices/:deviceId` | soi-même, admin | Quitte le partage, ou révoque un appareil (jamais un autre administrateur) |
-| POST | `/v1/households/:id/keys` | admin | Dépose la clé renouvelée `{epoch, envelopes: [{deviceId, sealedKey}]}` pour tous les appareils restants |
+| POST | `/v1/households/:id/keys` | admin | Dépose la clé renouvelée `{epoch, envelopes: [{deviceId, sealedKey}], recoveryEnvelope?}` pour tous les appareils restants (et le kit de secours) |
 | GET | `/v1/households/:id/keys` | tous | Enveloppes destinées à cet appareil, par époque |
 | POST | `/v1/households/:id/changes` | admin, member | Envoie jusqu'à 500 modifications chiffrées `{epoch, changes: [{id, scope?, nonce, ciphertext}]}` ; un `id` déjà reçu est ignoré ; `403 forbidden_scope` hors des personnes partagées ; `409 stale_epoch` si la clé a été renouvelée |
 | GET, PUT, DELETE | `/v1/households/:id/blobs/:blobId` | lecture : tous ; écriture : admin, member | Fichier chiffré `{epoch, scope?, nonce, ciphertext}` |

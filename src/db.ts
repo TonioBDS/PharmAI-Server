@@ -111,6 +111,12 @@ const PG_MIGRATIONS: string[] = [
   -- restreint ne lit que la suite (l'administrateur y renvoie tout le foyer, avec portées)
   ALTER TABLE households ADD COLUMN scoped_since BIGINT;
   `,
+  // 5 : kit de secours (le serveur ne garde que le haché du code et une enveloppe qu'il ne peut ouvrir)
+  `
+  ALTER TABLE households ADD COLUMN recovery_hash TEXT;
+  ALTER TABLE households ADD COLUMN recovery_envelope TEXT;
+  CREATE UNIQUE INDEX households_recovery_idx ON households(recovery_hash);
+  `,
 ];
 
 const SQLITE_MIGRATIONS: string[] = [
@@ -204,6 +210,12 @@ const SQLITE_MIGRATIONS: string[] = [
   -- Début du journal « avec portées » : avant, les modifications n'en avaient pas ; un appareil
   -- restreint ne lit que la suite (l'administrateur y renvoie tout le foyer, avec portées)
   ALTER TABLE households ADD COLUMN scoped_since INTEGER;
+  `,
+  // 5 : kit de secours (le serveur ne garde que le haché du code et une enveloppe qu'il ne peut ouvrir)
+  `
+  ALTER TABLE households ADD COLUMN recovery_hash TEXT;
+  ALTER TABLE households ADD COLUMN recovery_envelope TEXT;
+  CREATE UNIQUE INDEX households_recovery_idx ON households(recovery_hash);
   `,
 ];
 

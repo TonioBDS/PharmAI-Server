@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
+import { purgeInactive } from '../src/cleanup.js';
 import { loadConfig } from '../src/config.js';
 import { Db, openDb } from '../src/db.js';
 
@@ -342,6 +343,41 @@ describe.each(targets)('API PharmAI (%s)', (_name, url) => {
     // Promu administrateur : tout le foyer
     await app.inject({ method: 'PATCH', url: `/v1/households/${owner.householdId}/devices/${ado.deviceId}`, headers: bearer(owner.deviceToken), payload: { role: 'admin' } });
     expect(((await pull(ado)).json() as { changes: unknown[] }).changes.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('restaure un administrateur avec le kit de secours, et retire le téléphone perdu', async () => {
+    const owner = await newHousehold('Téléphone perdu');
+    const member = await join(owner, 'member', 'Tablette');
+    const token = 'f'.repeat(63) + '1';
+    const devicesUrl = `/v1/households/${owner.householdId}/devices`;
+    // Seul un administrateur enregistre le kit
+    expect((await app.inject({ method: 'PUT', url: `/v1/households/${owner.householdId}/recovery`, headers: bearer(member.deviceToken), payload: { token, envelope: SEALED } })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'PUT', url: `/v1/households/${owner.householdId}/recovery`, headers: bearer(owner.deviceToken), payload: { token, envelope: SEALED } })).statusCode).toBe(204);
+    expect(((await app.inject({ method: 'GET', url: devicesUrl, headers: bearer(owner.deviceToken) })).json() as { recovery: boolean }).recovery).toBe(true);
+
+    expect((await app.inject({ method: 'POST', url: '/v1/recover', payload: { token: 'e'.repeat(64), deviceName: 'Nouveau' } })).statusCode).toBe(404);
+    const res = await app.inject({ method: 'POST', url: '/v1/recover', payload: { token, deviceName: 'Nouveau téléphone' } });
+    expect(res.statusCode).toBe(201);
+    const restored = res.json() as { householdId: string; deviceToken: string; envelope: string; role: string };
+    expect(restored).toMatchObject({ householdId: owner.householdId, envelope: SEALED, role: 'admin' });
+
+    // Le téléphone perdu ne peut plus rien faire ; la tablette reste ; la clé devra être renouvelée
+    expect((await app.inject({ method: 'GET', url: devicesUrl, headers: bearer(owner.deviceToken) })).statusCode).toBe(401);
+    const list = (await app.inject({ method: 'GET', url: devicesUrl, headers: bearer(restored.deviceToken) })).json() as { devices: { name: string }[]; rekeyNeeded: boolean };
+    expect(list.devices.map((d) => d.name).sort()).toEqual(['Nouveau téléphone', 'Tablette']);
+    expect(list.rekeyNeeded).toBe(true);
+  });
+
+  it('efface les foyers sans connexion depuis le délai choisi, et seulement eux', async () => {
+    const active = await newHousehold('Actif');
+    const old = await newHousehold('Oublié');
+    const longAgo = new Date(Date.now() - 400 * 24 * 3600 * 1000).toISOString();
+    await db.query('UPDATE households SET created_at = $1 WHERE id = $2', [longAgo, old.householdId]);
+    await db.query('UPDATE devices SET created_at = $1, last_seen_at = $1 WHERE household_id = $2', [longAgo, old.householdId]);
+    expect(await purgeInactive(db, 0)).toBe(0);
+    expect(await purgeInactive(db, 365)).toBeGreaterThanOrEqual(1);
+    expect((await app.inject({ method: 'GET', url: `/v1/households/${old.householdId}/devices`, headers: bearer(old.deviceToken) })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'GET', url: `/v1/households/${active.householdId}/devices`, headers: bearer(active.deviceToken) })).statusCode).toBe(200);
   });
 
   it('peut fermer les inscriptions et limite les tentatives sans jeton', async () => {
