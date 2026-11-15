@@ -1,6 +1,6 @@
 # App Home Assistant « PharmAI Server » : https://developers.home-assistant.io/docs/apps/configuration
 # La version doit correspondre à une image publiée ghcr.io/toniobds/pharmai-server:<version>
-# (étiquette vX.Y.Z du dépôt) ; un test vérifie qu'elle suit la version du serveur.
+# (publiée à chaque fusion sur main, d'après package.json) ; un test vérifie qu'elle suit la version du serveur.
 name: PharmAI Server
 version: "0.5.1"
 slug: pharmai_server

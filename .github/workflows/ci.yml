@@ -118,14 +118,25 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Nom de l'image
-        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/pharmai-server" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: package.json
+          sparse-checkout-cone-mode: false
+      - name: Nom et version de l'image
+        run: |
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/pharmai-server" >> "$GITHUB_ENV"
+          # Version de package.json : publiée à chaque fusion sur main (l'app Home Assistant s'y réfère)
+          VERSION=$(jq -r .version package.json)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "MINOR=${VERSION%.*}" >> "$GITHUB_ENV"
       - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ env.VERSION }},enable={{is_default_branch}}
+            type=raw,value=${{ env.MINOR }},enable={{is_default_branch}}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=
