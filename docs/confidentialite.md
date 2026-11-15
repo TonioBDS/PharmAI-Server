@@ -78,6 +78,7 @@ Leurs propres politiques de confidentialité s’appliquent.
 | Photo d’un produit non médicamenteux | [Open Food Facts](https://world.openfoodfacts.org/privacy) et ses projets frères | Le code-barres du produit |
 | Notice officielle | [Base de données publique des médicaments](https://base-donnees-publique.medicaments.gouv.fr) (ouverte dans votre navigateur) | Le code du médicament |
 | Recherche d’image, fiche d’une pharmacie | Google (ouvert dans votre navigateur ou Google Maps) | Le nom du produit ou de la pharmacie |
+| Adresse d’image collée (« Copier l’adresse de l’image ») | Le site qui héberge l’image | Une demande de téléchargement de cette image |
 | Pharmacie de garde | 3237.fr (ouvert dans votre navigateur) | Rien, sauf ce que vous y saisissez |
 
 Nous ne recevons aucune de ces informations.
