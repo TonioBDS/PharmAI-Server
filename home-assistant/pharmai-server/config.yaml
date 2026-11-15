@@ -10,15 +10,11 @@ stage: experimental
 arch:
   - aarch64
   - amd64
-startup: application
-boot: auto
-init: false
 ports:
   8080/tcp: 8080
 ports_description:
   8080/tcp: Port saisi dans l'app PharmAI (Réglages › Partage)
-watchdog: http://[HOST]:[PORT:8080]/health
-# Arrêt pendant la sauvegarde : la base SQLite est copiée au repos
+# Surveillance : HEALTHCHECK de l'image (/health). Arrêt pendant la sauvegarde : la base SQLite est copiée au repos
 backup: cold
 options:
   allow_registration: true

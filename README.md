@@ -50,8 +50,8 @@ l'interface, sans Docker Compose.
 
 1. Cliquez sur le bouton ci-dessus, ou dans Home Assistant : **Paramètres › Apps › Boutique
    d'apps**, menu **⋮ › Dépôts**, ajoutez `https://github.com/TonioBDS/PharmAI-Server`.
-2. Installez **PharmAI Server**, puis **Démarrer** (activez « Lancer au démarrage » et le
-   chien de garde).
+2. Installez **PharmAI Server**, puis **Démarrer**. L'app redémarre avec Home Assistant et
+   est relancée si elle ne répond plus.
 3. Dans l'app PharmAI : Réglages › Partage › « Créer un partage », adresse
    `<IP de Home Assistant>:8080` (Paramètres › Système › Réseau).
 4. Partage créé : onglet **Configuration** de l'app, désactivez « Autoriser la création de
