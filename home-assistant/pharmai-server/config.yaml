@@ -2,7 +2,7 @@
 # La version doit correspondre à une image publiée ghcr.io/toniobds/pharmai-server:<version>
 # (publiée à chaque fusion sur main, d'après package.json) ; un test vérifie qu'elle suit la version du serveur.
 name: PharmAI Server
-version: "0.5.1"
+version: "0.5.2"
 slug: pharmai_server
 description: Serveur de partage chiffré de bout en bout pour l'app PharmAI (armoire à pharmacie)
 url: https://github.com/TonioBDS/PharmAI-Server/tree/main/home-assistant/pharmai-server

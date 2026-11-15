@@ -22,9 +22,13 @@ export async function blobRoutes(app: FastifyInstance, opts: { db: Db; config: C
   const maxB64 = Math.ceil((config.maxBlobBytes * 4) / 3) + 64;
 
   app.get('/v1/households/:householdId/blobs', { schema: { params: householdParams }, preHandler: requireDevice(db) }, async (request) => {
-    const { rows } = await db.query<{ id: string; scope: string | null }>('SELECT id, scope FROM blobs WHERE household_id = $1', [request.device!.householdId]);
+    const { rows } = await db.query<{ id: string; scope: string | null; created_at: string | Date }>('SELECT id, scope, created_at FROM blobs WHERE household_id = $1', [
+      request.device!.householdId,
+    ]);
     // Photos d'ordonnances d'une personne non partagée avec cet appareil : invisibles
-    return { ids: rows.filter((r) => canSee(request.device!, r.scope)).map((r) => r.id) };
+    const visible = rows.filter((r) => canSee(request.device!, r.scope));
+    // createdAt : l'app n'efface une photo orpheline qu'au bout d'un délai (ligne pas encore reçue)
+    return { ids: visible.map((r) => r.id), blobs: visible.map((r) => ({ id: r.id, createdAt: new Date(r.created_at).toISOString() })) };
   });
 
   app.put(
@@ -76,6 +80,9 @@ export async function blobRoutes(app: FastifyInstance, opts: { db: Db; config: C
 
   app.delete('/v1/households/:householdId/blobs/:blobId', { schema: { params: blobParams }, preHandler: requireDevice(db, 'admin', 'member') }, async (request, reply) => {
     const { blobId } = request.params as { blobId: string };
+    // Photo d'une personne non partagée avec cet appareil : il ne peut pas l'effacer
+    const { rows } = await db.query<{ scope: string | null }>('SELECT scope FROM blobs WHERE household_id = $1 AND id = $2', [request.device!.householdId, blobId]);
+    if (rows[0] && !canSee(request.device!, rows[0].scope)) return reply.code(404).send({ error: 'not_found' });
     await db.query('DELETE FROM blobs WHERE household_id = $1 AND id = $2', [request.device!.householdId, blobId]);
     return reply.code(204).send();
   });

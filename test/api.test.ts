@@ -276,7 +276,7 @@ describe.each(targets)('API PharmAI (%s)', (_name, url) => {
     // Renvoi ignoré, lecture par un appareil en lecture seule, cloisonnement entre foyers
     expect((await app.inject({ method: 'PUT', url: url(a), headers: bearer(a.deviceToken), payload: { ...body, ciphertext: b64('autre') } })).statusCode).toBe(204);
     expect((await app.inject({ method: 'GET', url: url(a), headers: bearer(b.deviceToken) })).json()).toEqual(body);
-    expect((await app.inject({ method: 'GET', url: `/v1/households/${a.householdId}/blobs`, headers: bearer(b.deviceToken) })).json()).toEqual({ ids: [id] });
+    expect((await app.inject({ method: 'GET', url: `/v1/households/${a.householdId}/blobs`, headers: bearer(b.deviceToken) })).json()).toEqual({ ids: [id], blobs: [{ id, createdAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) }] });
     expect((await app.inject({ method: 'GET', url: url(other), headers: bearer(other.deviceToken) })).statusCode).toBe(404);
     expect((await app.inject({ method: 'GET', url: url(a), headers: bearer(other.deviceToken) })).statusCode).toBe(403);
     expect((await app.inject({ method: 'DELETE', url: url(a), headers: bearer(a.deviceToken) })).statusCode).toBe(204);
@@ -336,8 +336,11 @@ describe.each(targets)('API PharmAI (%s)', (_name, url) => {
     // Photos d'ordonnance : invisibles hors portée
     const blob = { nonce: b64('nonce-de-test-24o'), ciphertext: b64('photo') };
     const id = 'c'.repeat(32);
-    await app.inject({ method: 'PUT', url: `/v1/households/${owner.householdId}/blobs/${id}`, headers: bearer(owner.deviceToken), payload: { ...blob, scope: 'd'.repeat(32) } });
+    await app.inject({ method: 'PUT', url: `/v1/households/${owner.householdId}/blobs/${id}`, headers: bearer(owner.deviceToken), payload: { epoch: 1, ...blob, scope: 'd'.repeat(32) } });
     expect((await app.inject({ method: 'GET', url: `/v1/households/${owner.householdId}/blobs/${id}`, headers: bearer(ado.deviceToken) })).statusCode).toBe(404);
+    // … et impossibles à effacer hors portée
+    expect((await app.inject({ method: 'DELETE', url: `/v1/households/${owner.householdId}/blobs/${id}`, headers: bearer(ado.deviceToken) })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: `/v1/households/${owner.householdId}/blobs/${id}`, headers: bearer(owner.deviceToken) })).statusCode).toBe(200);
     expect(((await app.inject({ method: 'GET', url: `/v1/households/${owner.householdId}/blobs`, headers: bearer(ado.deviceToken) })).json() as { ids: string[] }).ids).not.toContain(id);
 
     // Promu administrateur : tout le foyer
