@@ -1,0 +1,12 @@
+configuration:
+  allow_registration:
+    name: Allow creating shares
+    description: Keep it on while you create your share from the app, then turn it off. Invited phones can still join.
+  inactive_days:
+    name: Delete inactive shares (days)
+    description: A share with no phone connecting for this many days is deleted from the server (phones keep their data). 0 = never.
+  log_level:
+    name: Log level
+    description: Log detail. Cabinet contents never appear in the logs.
+network:
+  8080/tcp: Port entered in the PharmAI app (Settings › Sharing)

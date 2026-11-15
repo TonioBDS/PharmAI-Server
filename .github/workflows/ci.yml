@@ -7,6 +7,16 @@ on:
     tags: ['v*']
 
 jobs:
+  home-assistant:
+    # Vérifie la fiche de l'app Home Assistant (format attendu par le Supervisor)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: frenck/action-addon-linter@v2.21
+        with:
+          path: ./home-assistant/pharmai-server
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15

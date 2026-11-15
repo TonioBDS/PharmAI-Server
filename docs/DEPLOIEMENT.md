@@ -2,6 +2,7 @@
 
 Pour une VM, un NAS ou un mini-PC qui fait déjà tourner d'autres conteneurs Docker.
 Durée : 10 minutes environ. Rien ici n'a besoin d'être ouvert sur Internet.
+Sur **Home Assistant OS**, c'est encore plus simple : [voir la fin de ce guide](#si-vous-utilisez-home-assistant-os).
 
 ## 1. Prérequis
 
@@ -145,3 +146,12 @@ du tunnel dans l'app. N'ouvrez pas le port sur la box.
 
 Stacks › Add stack › « Repository », URL du dépôt (avec vos identifiants GitHub), fichier
 `docker-compose.yml`, et dans « Environment variables » : `PORT`, `ALLOW_REGISTRATION`.
+
+## Si vous utilisez Home Assistant OS
+
+Pas besoin de Docker Compose : installez l'**app PharmAI Server** depuis l'interface de
+Home Assistant (Paramètres › Apps › Boutique d'apps › ⋮ › Dépôts, ajoutez
+`https://github.com/TonioBDS/PharmAI-Server`). Les étapes 2 à 8 sont alors remplacées par
+l'onglet Configuration de l'app : voir la
+[documentation de l'app](https://github.com/TonioBDS/PharmAI-Server/blob/main/home-assistant/pharmai-server/DOCS.md).
+

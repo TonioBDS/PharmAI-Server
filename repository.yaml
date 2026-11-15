@@ -1,0 +1,4 @@
+# Dépôt d'apps Home Assistant : https://developers.home-assistant.io/docs/apps/repository
+name: PharmAI
+url: https://github.com/TonioBDS/PharmAI-Server
+maintainer: TonioBDS

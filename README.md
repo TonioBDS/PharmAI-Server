@@ -10,6 +10,8 @@ si vous proposez une version modifiée à d'autres via un réseau, vous devez en
 
 ## Démarrer chez soi (Docker)
 
+Vous avez Home Assistant OS ? Voir plutôt [Sur Home Assistant](#sur-home-assistant-app).
+
 **Guide pas à pas (port, pare-feu, sauvegarde, mise à jour) : [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md).**
 
 Un seul conteneur, base **SQLite** dans un volume : convient à un Raspberry Pi, un NAS ou un mini-PC.
@@ -37,6 +39,28 @@ Dans l'app : Réglages → Partage → « Créer un partage », avec l'adresse d
 > **Données de santé.** Héberger ce serveur pour votre propre foyer ne pose pas de difficulté.
 > L'ouvrir à d'autres personnes revient, en France, à héberger des données de santé pour
 > le compte de tiers, ce qui impose en principe un hébergeur certifié HDS.
+
+## Sur Home Assistant (app)
+
+Ce dépôt est aussi un **dépôt d'apps Home Assistant** (anciennement « add-ons ») : sur un
+Home Assistant OS (mini-PC, Raspberry Pi 4/5), le serveur s'installe et se met à jour depuis
+l'interface, sans Docker Compose.
+
+[![Ajouter le dépôt à mon Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FTonioBDS%2FPharmAI-Server)
+
+1. Cliquez sur le bouton ci-dessus, ou dans Home Assistant : **Paramètres › Apps › Boutique
+   d'apps**, menu **⋮ › Dépôts**, ajoutez `https://github.com/TonioBDS/PharmAI-Server`.
+2. Installez **PharmAI Server**, puis **Démarrer** (activez « Lancer au démarrage » et le
+   chien de garde).
+3. Dans l'app PharmAI : Réglages › Partage › « Créer un partage », adresse
+   `<IP de Home Assistant>:8080` (Paramètres › Système › Réseau).
+4. Partage créé : onglet **Configuration** de l'app, désactivez « Autoriser la création de
+   partages ».
+
+Mises à jour proposées par Home Assistant ; la base du serveur est incluse dans les
+sauvegardes de Home Assistant. Hors de chez vous, utilisez l'app Tailscale de Home Assistant
+(l'accès à distance Nabu Casa ne transmet pas ce serveur). Détails : [documentation de
+l'app](home-assistant/pharmai-server/DOCS.md). Architectures : amd64 et aarch64.
 
 ## Ajouter un téléphone, rôles, révocation
 

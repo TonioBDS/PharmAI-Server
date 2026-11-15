@@ -6,7 +6,7 @@ import { changeRoutes } from './routes/changes.js';
 import { householdRoutes } from './routes/households.js';
 import { purgeInactive } from './cleanup.js';
 
-export const VERSION = '0.5.0';
+export const VERSION = '0.5.1';
 
 export function buildApp(config: Config, db: Db): FastifyInstance {
   const app = Fastify({

@@ -46,3 +46,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     logLevel: env.LOG_LEVEL ?? 'info',
   };
 }
+
+/**
+ * Options saisies dans Home Assistant (app « PharmAI Server ») : le Supervisor les écrit dans
+ * /data/options.json. Elles prennent le pas sur les variables d'environnement correspondantes.
+ */
+export function withOptions(env: NodeJS.ProcessEnv, options: unknown): NodeJS.ProcessEnv {
+  if (!options || typeof options !== 'object') return env;
+  const o = options as Record<string, unknown>;
+  const next = { ...env };
+  if (typeof o.allow_registration === 'boolean') next.ALLOW_REGISTRATION = String(o.allow_registration);
+  if (typeof o.inactive_days === 'number' && o.inactive_days >= 0) next.INACTIVE_DAYS = String(Math.floor(o.inactive_days));
+  if (typeof o.log_level === 'string' && o.log_level) next.LOG_LEVEL = o.log_level;
+  return next;
+}

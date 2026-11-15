@@ -1,0 +1,12 @@
+configuration:
+  allow_registration:
+    name: Autoriser la création de partages
+    description: Laissez activé le temps de créer votre partage depuis l'app, puis désactivez-le. Les téléphones invités peuvent toujours rejoindre le partage.
+  inactive_days:
+    name: Effacer les partages inactifs (jours)
+    description: Un partage dont aucun téléphone ne s'est connecté depuis ce nombre de jours est effacé du serveur (les téléphones gardent leurs données). 0 = jamais.
+  log_level:
+    name: Niveau de journalisation
+    description: Détail des journaux de l'app. Le contenu des armoires n'y figure jamais.
+network:
+  8080/tcp: Port saisi dans l'app PharmAI (Réglages › Partage)
