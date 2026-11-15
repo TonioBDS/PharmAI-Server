@@ -61,6 +61,12 @@ utilise les fonctions intégrées d’Apple.
 
 L’application n’utilise ni le micro, ni la localisation en arrière-plan, ni vos contacts.
 
+**Presse-papiers.** Pour la photo d’un produit trouvée sur le web, l’application regarde le
+presse-papiers au moment où vous lancez la recherche et quand vous revenez dans l’application,
+afin de vous proposer l’image que vous venez de copier. L’image n’est enregistrée que si vous
+l’acceptez ; rien n’est envoyé, et l’image copiée auparavant n’est ni conservée ni enregistrée
+(seule une empreinte, en mémoire, sert à la comparaison).
+
 ## Les services extérieurs contactés
 
 Ces services ne sont contactés que lorsque vous utilisez la fonction correspondante.

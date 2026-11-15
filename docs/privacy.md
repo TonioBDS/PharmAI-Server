@@ -60,6 +60,11 @@ iPhone, reading uses Apple's built-in features.
 
 The app does not use the microphone, background location or your contacts.
 
+**Clipboard.** For a product photo found on the web, the app looks at the clipboard when you
+start the search and when you come back to the app, to offer you the image you just copied.
+The image is saved only if you accept it; nothing is sent, and the image copied before is
+neither kept nor saved (only a fingerprint, in memory, is used for the comparison).
+
 ## Outside services contacted
 
 These services are contacted only when you use the matching feature. Their own privacy
