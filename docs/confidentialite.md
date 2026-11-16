@@ -65,7 +65,8 @@ L’application n’utilise ni le micro, ni la localisation en arrière-plan, ni
 presse-papiers au moment où vous lancez la recherche et quand vous revenez dans l’application,
 afin de vous proposer l’image que vous venez de copier. L’image n’est enregistrée que si vous
 l’acceptez ; rien n’est envoyé, et l’image copiée auparavant n’est ni conservée ni enregistrée
-(seule une empreinte, en mémoire, sert à la comparaison).
+(seule une empreinte, en mémoire, sert à la comparaison). Quand vous utilisez l’image copiée
+comme photo d’un produit, l’application vide ensuite le presse-papiers.
 
 ## Les services extérieurs contactés
 
