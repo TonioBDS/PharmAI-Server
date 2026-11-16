@@ -77,7 +77,6 @@ policies apply.
 | Photo of a non-medicine product | [Open Food Facts](https://world.openfoodfacts.org/privacy) and its sister projects | The product barcode |
 | Official leaflet | French [public medicines database](https://base-donnees-publique.medicaments.gouv.fr) (opened in your browser) | The medicine code |
 | Image search, pharmacy page | Google (opened in your browser or Google Maps) | The product or pharmacy name |
-| Pasted image address (“Copy image address”) | The site hosting the image | A request to download that image |
 | On-duty pharmacy (France) | 3237.fr (opened in your browser) | Nothing, except what you type there |
 
 We receive none of this information.
