@@ -79,6 +79,7 @@ Leurs propres politiques de confidentialité s’appliquent.
 | Photo d’un produit non médicamenteux | [Open Food Facts](https://world.openfoodfacts.org/privacy) et ses projets frères | Le code-barres du produit |
 | Notice officielle | [Base de données publique des médicaments](https://base-donnees-publique.medicaments.gouv.fr) (ouverte dans votre navigateur) | Le code du médicament |
 | Recherche d’image, fiche d’une pharmacie | Google (ouvert dans votre navigateur ou Google Maps) | Le nom du produit ou de la pharmacie |
+| Mise à jour de la base des médicaments | [GitHub](https://docs.github.com/fr/site-policy/privacy-policies/github-general-privacy-statement) (dépôt public PharmAI-Data) | Rien : le fichier complet est téléchargé, comme sur un site web (GitHub voit l’adresse IP) |
 | Pharmacie de garde | 3237.fr (ouvert dans votre navigateur) | Rien, sauf ce que vous y saisissez |
 
 Nous ne recevons aucune de ces informations.

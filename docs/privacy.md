@@ -77,6 +77,7 @@ policies apply.
 | Photo of a non-medicine product | [Open Food Facts](https://world.openfoodfacts.org/privacy) and its sister projects | The product barcode |
 | Official leaflet | French [public medicines database](https://base-donnees-publique.medicaments.gouv.fr) (opened in your browser) | The medicine code |
 | Image search, pharmacy page | Google (opened in your browser or Google Maps) | The product or pharmacy name |
+| Medicines database update | [GitHub](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement) (public PharmAI-Data repository) | Nothing: the whole file is downloaded, as from any website (GitHub sees the IP address) |
 | On-duty pharmacy (France) | 3237.fr (opened in your browser) | Nothing, except what you type there |
 
 We receive none of this information.
