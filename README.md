@@ -33,6 +33,8 @@ Dans l'app : Réglages → Partage → « Créer un partage », avec l'adresse d
 - **Hors de chez vous** : utilisez un tunnel chiffré (Tailscale, WireGuard) ou un proxy HTTPS,
   plutôt que d'ouvrir un port sur votre box. En HTTP simple, les jetons d'appareil circulent en
   clair sur le réseau (le contenu des armoires, lui, reste chiffré de bout en bout).
+  **Guide : [docs/ACCES-DISTANT.md](docs/ACCES-DISTANT.md)** (Tailscale pas à pas, WireGuard,
+  proxy HTTPS). Choisissez l'adresse définitive avant de créer le partage.
 - **Sauvegarde** : copiez le volume `data` (fichier `pharmai.db`).
 - **PostgreSQL** (plusieurs foyers, service hébergé) : `docker compose -f docker-compose.postgres.yml up -d --build`.
 
@@ -59,7 +61,8 @@ l'interface, sans Docker Compose.
 
 Mises à jour proposées par Home Assistant ; la base du serveur est incluse dans les
 sauvegardes de Home Assistant. Hors de chez vous, utilisez l'app Tailscale de Home Assistant
-(l'accès à distance Nabu Casa ne transmet pas ce serveur). Détails : [documentation de
+(l'accès à distance Nabu Casa ne transmet pas ce serveur) : voir
+[docs/ACCES-DISTANT.md](docs/ACCES-DISTANT.md#tailscale-recommandé). Détails : [documentation de
 l'app](home-assistant/pharmai-server/DOCS.md). Architectures : amd64 et aarch64.
 
 ## Ajouter un téléphone, rôles, révocation

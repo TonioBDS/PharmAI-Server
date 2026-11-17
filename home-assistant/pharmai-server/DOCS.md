@@ -30,7 +30,10 @@ reportez-le alors dans l'adresse saisie dans l'app.
 Sans rien de plus, les téléphones se synchronisent sur le Wi-Fi de la maison et gardent leurs
 modifications en attendant. Pour synchroniser de partout, installez l'app **Tailscale** de
 Home Assistant et Tailscale sur les téléphones, puis utilisez l'adresse Tailscale de
-Home Assistant dans l'app PharmAI. N'ouvrez pas le port sur votre box.
+Home Assistant dans l'app PharmAI (par exemple `http://homeassistant.tailXXXX.ts.net:8080`).
+N'ouvrez pas le port sur votre box. Pas à pas et autres solutions :
+[guide d'accès distant](https://github.com/TonioBDS/PharmAI-Server/blob/main/docs/ACCES-DISTANT.md).
+Choisissez cette adresse avant de créer le partage : elle ne se change pas ensuite.
 
 L'accès à distance de Home Assistant (Nabu Casa) ne transmet que l'interface de
 Home Assistant : il ne donne pas accès à ce serveur.

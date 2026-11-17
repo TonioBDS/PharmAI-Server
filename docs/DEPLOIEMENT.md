@@ -142,6 +142,10 @@ et gardent leurs modifications en attendant. Pour synchroniser de partout, insta
 tunnel chiffré (Tailscale ou WireGuard) sur la machine et les téléphones, et utilisez l'adresse
 du tunnel dans l'app. N'ouvrez pas le port sur la box.
 
+Pas à pas, avantages et limites de chaque solution : **[ACCES-DISTANT.md](ACCES-DISTANT.md)**.
+À faire **avant l'étape 6** si possible : l'adresse saisie à la création du partage ne se
+change pas ensuite.
+
 ## Si vous utilisez Portainer
 
 Stacks › Add stack › « Repository », URL du dépôt (avec vos identifiants GitHub), fichier
