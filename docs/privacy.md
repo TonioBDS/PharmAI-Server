@@ -6,7 +6,7 @@ permalink: /privacy/
 
 # PharmAI privacy policy
 
-*Last updated: 12 November 2026* · [Version française](../confidentialite/)
+*Last updated: 17 November 2026* · [Version française](../confidentialite/)
 
 PharmAI is a medicine cabinet app for Android and iPhone. It is designed so that your health
 data stays with you.
@@ -73,10 +73,10 @@ policies apply.
 
 | Feature | Service | What is sent |
 |---|---|---|
-| Nearby pharmacies | Public [OpenStreetMap](https://wiki.openstreetmap.org/wiki/Overpass_API) servers (Overpass) | Your position at the time of the search, and the search radius |
+| Nearby pharmacies | Google Maps (opened in the Google Maps app or your browser) | The word “pharmacy” and your position at the time of the search; then whatever Google Maps collects under its own rules |
 | Photo of a non-medicine product | [Open Food Facts](https://world.openfoodfacts.org/privacy) and its sister projects | The product barcode |
 | Official leaflet | French [public medicines database](https://base-donnees-publique.medicaments.gouv.fr) (opened in your browser) | The medicine code |
-| Image search, pharmacy page | Google (opened in your browser or Google Maps) | The product or pharmacy name |
+| Image search | Google (opened in your browser) | The product name |
 | Medicines database and destination information (trips) update | [GitHub](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement) (public PharmAI-Data repository) | Nothing: the whole files are downloaded, as from any website, whatever destination is chosen (GitHub sees the IP address) |
 | On-duty pharmacy (France) | 3237.fr (opened in your browser) | Nothing, except what you type there |
 

@@ -6,7 +6,7 @@ permalink: /confidentialite/
 
 # Politique de confidentialité de PharmAI
 
-*Dernière mise à jour : 12 novembre 2026* · [English version](../privacy/)
+*Dernière mise à jour : 17 novembre 2026* · [English version](../privacy/)
 
 PharmAI est une application d’armoire à pharmacie pour Android et iPhone. Elle est conçue
 pour que vos données de santé restent chez vous.
@@ -75,10 +75,10 @@ Leurs propres politiques de confidentialité s’appliquent.
 
 | Fonction | Service | Ce qui est transmis |
 |---|---|---|
-| Pharmacies proches | Serveurs publics d’[OpenStreetMap](https://wiki.openstreetmap.org/wiki/Overpass_API) (Overpass) | Votre position au moment de la recherche, et le rayon de recherche |
+| Pharmacies proches | Google Maps (ouvert dans l’application Google Maps ou votre navigateur) | Le mot « pharmacie » et votre position au moment de la recherche ; ensuite, ce que Google Maps recueille selon ses propres règles |
 | Photo d’un produit non médicamenteux | [Open Food Facts](https://world.openfoodfacts.org/privacy) et ses projets frères | Le code-barres du produit |
 | Notice officielle | [Base de données publique des médicaments](https://base-donnees-publique.medicaments.gouv.fr) (ouverte dans votre navigateur) | Le code du médicament |
-| Recherche d’image, fiche d’une pharmacie | Google (ouvert dans votre navigateur ou Google Maps) | Le nom du produit ou de la pharmacie |
+| Recherche d’image | Google (ouvert dans votre navigateur) | Le nom du produit |
 | Mise à jour de la base des médicaments et des informations par destination (voyages) | [GitHub](https://docs.github.com/fr/site-policy/privacy-policies/github-general-privacy-statement) (dépôt public PharmAI-Data) | Rien : les fichiers complets sont téléchargés, comme sur un site web, quelle que soit la destination choisie (GitHub voit l’adresse IP) |
 | Pharmacie de garde | 3237.fr (ouvert dans votre navigateur) | Rien, sauf ce que vous y saisissez |
 
