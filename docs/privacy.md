@@ -24,8 +24,8 @@ data stays with you.
 
 ## Who we are
 
-PharmAI is developed by [DEVELOPER NAME], an independent developer.
-Contact: [CONTACT EMAIL ADDRESS].
+PharmAI is developed by LET US GEEK, an independent developer.
+Contact: letusgeek31@gmail.com.
 
 To date, we do not run any server that would receive your data, so we do not receive your
 personal data.
@@ -120,7 +120,7 @@ or send wherever you decide. Keep them somewhere safe.
 
 As we do not hold your data, you manage it directly in the app: viewing, editing, exporting and
 erasing. For a sharing server, contact the person who runs it. For any question:
-[CONTACT EMAIL ADDRESS]. You can also contact the data protection authority of your country.
+letusgeek31@gmail.com. You can also contact the data protection authority of your country.
 
 ## Children
 

@@ -24,8 +24,8 @@ pour que vos données de santé restent chez vous.
 
 ## Qui sommes-nous
 
-PharmAI est développée par [NOM DU DÉVELOPPEUR], développeur indépendant.
-Contact : [ADRESSE E-MAIL DE CONTACT].
+PharmAI est développée par LET US GEEK, développeur indépendant.
+Contact : letusgeek31@gmail.com.
 
 À ce jour, nous n’exploitons aucun serveur qui recevrait vos données : nous ne sommes donc pas
 destinataires de vos données personnelles.
@@ -122,7 +122,7 @@ chiffrés**, que vous enregistrez ou envoyez où vous le décidez. Rangez-les en
 
 Comme nous ne détenons pas vos données, vous les gérez directement dans l’application :
 consultation, modification, export et effacement. Pour un serveur de partage, adressez-vous à
-la personne qui l’exploite. Pour toute question : [ADRESSE E-MAIL DE CONTACT]. Vous pouvez aussi
+la personne qui l’exploite. Pour toute question : letusgeek31@gmail.com. Vous pouvez aussi
 saisir l’autorité de protection des données de votre pays (en France, la
 [CNIL](https://www.cnil.fr/fr/plaintes)).
 
