@@ -16,6 +16,8 @@ services:
       # Effacer les partages sans aucune connexion depuis N jours (0 : jamais)
       INACTIVE_DAYS: ${INACTIVE_DAYS:-0}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Recherche d'images dans l'app (facultatif) : clé de l'API Brave Search
+      BRAVE_SEARCH_KEY: ${BRAVE_SEARCH_KEY:-}
     volumes:
       - data:/data
     ports:

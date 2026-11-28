@@ -18,6 +18,14 @@ export interface Config {
    */
   inactiveDays: number;
   logLevel: string;
+  /** Clé Brave Search pour la recherche d'images de l'app (sans clé : recherche d'images désactivée). */
+  braveSearchKey: string;
+  /** Recherche d'images ouverte sans jeton (relais public) ; sinon réservée aux appareils des foyers. */
+  imageSearchPublic: boolean;
+  /** Recherches d'images par minute et par adresse. */
+  imageSearchRateLimit: number;
+  /** Recherches d'images transmises à Brave par mois (0 : sans plafond). */
+  imageSearchMonthlyLimit: number;
 }
 
 function bool(value: string | undefined, fallback: boolean): boolean {
@@ -25,8 +33,9 @@ function bool(value: string | undefined, fallback: boolean): boolean {
   return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
 }
 
-function int(value: string | undefined, fallback: number): number {
+function int(value: string | undefined, fallback: number, allowZero = false): number {
   const n = Number(value);
+  if (allowZero && value !== undefined && value !== '' && n === 0) return 0;
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
@@ -44,6 +53,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     publicRateLimit: int(env.PUBLIC_RATE_LIMIT, 20),
     inactiveDays: int(env.INACTIVE_DAYS, 0),
     logLevel: env.LOG_LEVEL ?? 'info',
+    braveSearchKey: env.BRAVE_SEARCH_KEY ?? '',
+    imageSearchPublic: bool(env.IMAGE_SEARCH_PUBLIC, false),
+    imageSearchRateLimit: int(env.IMAGE_SEARCH_RATE_LIMIT, 30),
+    // ≈ le crédit mensuel offert par Brave (5 $, soit 1 000 recherches), avec une marge
+    imageSearchMonthlyLimit: int(env.IMAGE_SEARCH_MONTHLY_LIMIT, 900, true),
   };
 }
 
@@ -58,5 +72,6 @@ export function withOptions(env: NodeJS.ProcessEnv, options: unknown): NodeJS.Pr
   if (typeof o.allow_registration === 'boolean') next.ALLOW_REGISTRATION = String(o.allow_registration);
   if (typeof o.inactive_days === 'number' && o.inactive_days >= 0) next.INACTIVE_DAYS = String(Math.floor(o.inactive_days));
   if (typeof o.log_level === 'string' && o.log_level) next.LOG_LEVEL = o.log_level;
+  if (typeof o.brave_search_key === 'string') next.BRAVE_SEARCH_KEY = o.brave_search_key;
   return next;
 }

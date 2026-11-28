@@ -8,5 +8,8 @@ configuration:
   log_level:
     name: Log level
     description: Log detail. Cabinet contents never appear in the logs.
+  brave_search_key:
+    name: Brave Search key (image search)
+    description: Optional. With a Brave Search API key (api-dashboard.search.brave.com), the app shows images to tap for a product photo. The key stays on the server.
 network:
   8080/tcp: Port entered in the PharmAI app (Settings › Sharing)

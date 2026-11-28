@@ -395,3 +395,66 @@ describe.each(targets)('API PharmAI (%s)', (_name, url) => {
     await limited.close();
   });
 });
+
+describe('recherche d’images (relais Brave Search)', () => {
+  const brave = {
+    results: [
+      { title: 'Doliprane', thumbnail: { src: 'https://imgs.search.brave.com/a.jpg' }, properties: { url: 'https://exemple.fr/doliprane.jpg', width: 800, height: 600 }, meta_url: { hostname: 'exemple.fr' } },
+      { thumbnail: { src: 'http://non-securise.fr/b.jpg' }, properties: { url: 'http://non-securise.fr/b.jpg' } },
+      { thumbnail: { src: 'https://imgs.search.brave.com/c.jpg' }, properties: {} },
+    ],
+  };
+
+  async function setup(env: Record<string, string>) {
+    const db = await openDb('sqlite::memory:');
+    const calls: URL[] = [];
+    const fakeFetch = (async (url: URL, init?: RequestInit) => {
+      calls.push(url);
+      expect((init?.headers as Record<string, string>)['x-subscription-token']).toBe('cle-test');
+      return new Response(JSON.stringify(brave), { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as unknown as typeof fetch;
+    const app = buildApp(loadConfig({ DATABASE_URL: 'sqlite::memory:', LOG_LEVEL: 'silent', ...env }), db, { fetch: fakeFetch });
+    await app.ready();
+    return { app, db, calls };
+  }
+
+  it('sans clé : désactivée', async () => {
+    const { app, db } = await setup({ IMAGE_SEARCH_PUBLIC: 'true' });
+    const res = await app.inject({ method: 'POST', url: '/v1/images/search', payload: { q: 'doliprane' } });
+    expect(res.statusCode).toBe(404);
+    expect((await app.inject({ url: '/health' })).json().imageSearch).toBe(false);
+    await app.close();
+    await db.close();
+  });
+
+  it('réservée aux appareils des foyers, sauf relais public', async () => {
+    const { app, db } = await setup({ BRAVE_SEARCH_KEY: 'cle-test' });
+    expect((await app.inject({ method: 'POST', url: '/v1/images/search', payload: { q: 'doliprane' } })).statusCode).toBe(401);
+    const { deviceToken } = (await app.inject({ method: 'POST', url: '/v1/households', payload: { deviceName: 'Test' } })).json();
+    const res = await app.inject({ method: 'POST', url: '/v1/images/search', headers: { authorization: `Bearer ${deviceToken}` }, payload: { q: 'doliprane' } });
+    expect(res.statusCode).toBe(200);
+    expect((await app.inject({ url: '/health' })).json().imageSearch).toBe('devices');
+    await app.close();
+    await db.close();
+  });
+
+  it('relais public : images https seulement, cache, plafond mensuel', async () => {
+    const { app, db, calls } = await setup({ BRAVE_SEARCH_KEY: 'cle-test', IMAGE_SEARCH_PUBLIC: 'true', IMAGE_SEARCH_MONTHLY_LIMIT: '2' });
+    const res = await app.inject({ method: 'POST', url: '/v1/images/search', payload: { q: '  Doliprane   1000 ' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().images).toEqual([
+      { thumbnail: 'https://imgs.search.brave.com/a.jpg', url: 'https://exemple.fr/doliprane.jpg', width: 800, height: 600, source: 'exemple.fr' },
+      { thumbnail: 'https://imgs.search.brave.com/c.jpg', url: 'https://imgs.search.brave.com/c.jpg' },
+    ]);
+    expect(calls[0].searchParams.get('q')).toBe('Doliprane 1000');
+    expect(calls[0].searchParams.get('safesearch')).toBe('strict');
+    // Même recherche : depuis le cache, sans nouvel appel
+    await app.inject({ method: 'POST', url: '/v1/images/search', payload: { q: 'doliprane 1000' } });
+    expect(calls).toHaveLength(1);
+    expect((await app.inject({ method: 'POST', url: '/v1/images/search', payload: { q: 'efferalgan' } })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'POST', url: '/v1/images/search', payload: { q: 'dafalgan' } })).json().error).toBe('monthly_limit');
+    expect((await app.inject({ method: 'POST', url: '/v1/images/search', payload: { q: '' } })).statusCode).toBe(400);
+    await app.close();
+    await db.close();
+  });
+});

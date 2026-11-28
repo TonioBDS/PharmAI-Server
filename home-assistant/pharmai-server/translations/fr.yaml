@@ -8,5 +8,8 @@ configuration:
   log_level:
     name: Niveau de journalisation
     description: Détail des journaux de l'app. Le contenu des armoires n'y figure jamais.
+  brave_search_key:
+    name: Clé Brave Search (recherche d'images)
+    description: Facultatif. Avec une clé de l'API Brave Search (api-dashboard.search.brave.com), l'app affiche directement des images à toucher pour la photo d'un produit. La clé reste sur le serveur.
 network:
   8080/tcp: Port saisi dans l'app PharmAI (Réglages › Partage)
