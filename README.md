@@ -130,13 +130,23 @@ Variables : `DATABASE_URL` (`postgres://…` ou `sqlite:/chemin/fichier.db` ; pa
 `DATA_DIR` (`./data`, `/data` dans l'image), `PORT` (8080), `HOST` (0.0.0.0), `ALLOW_REGISTRATION` (true),
 `MAX_CHANGE_BYTES` (262144), `MAX_BLOB_BYTES` (3145728), `INVITE_TTL_HOURS` (24), `PUBLIC_RATE_LIMIT` (20 par minute et par adresse), `INACTIVE_DAYS` (0 : jamais ; sinon les partages sans aucune connexion depuis ce nombre de jours sont effacés du serveur, les téléphones gardant leurs données), `LOG_LEVEL` (info).
 
+Recherche d'images pour la photo des produits (facultative) : `BRAVE_SEARCH_KEY` (clé de l'API
+[Brave Search](https://api-dashboard.search.brave.com), vide par défaut : recherche désactivée),
+`IMAGE_SEARCH_PUBLIC` (false : réservée aux téléphones des foyers du serveur ; true : relais ouvert
+sans jeton, par exemple pour les téléphones sans partage), `IMAGE_SEARCH_RATE_LIMIT` (30 par minute et
+par adresse), `IMAGE_SEARCH_MONTHLY_LIMIT` (900 recherches transmises à Brave par mois, pour rester dans
+le crédit offert de 5 $ ; 0 : sans plafond). Le nom cherché passe dans le corps de la requête (jamais
+dans les journaux), n'est pas enregistré et n'est gardé en mémoire que 24 h, pour ne pas payer deux
+fois la même recherche.
+
 ## API v1
 
 Authentification : `Authorization: Bearer <deviceToken>`. Un appareil n'accède qu'à son foyer.
 
 | Méthode | Chemin | Qui | Rôle |
 | --- | --- | --- | --- |
-| GET | `/health` | tous | État du serveur et de la base |
+| GET | `/health` | tous | État du serveur et de la base ; `imageSearch` : `false`, `devices` ou `public` |
+| POST | `/v1/images/search` | appareils (ou tous si `IMAGE_SEARCH_PUBLIC`) | Recherche d'images `{q, lang?}` → `images: [{thumbnail, url, width?, height?, source?}]` ; `404` sans clé, `429` au-delà des plafonds |
 | POST | `/v1/households` | sans jeton | Crée un foyer et son premier appareil (administrateur), si `ALLOW_REGISTRATION` |
 | DELETE | `/v1/households/:id` | admin | Arrête le partage : efface le foyer du serveur |
 | POST | `/v1/households/:id/invites` | admin | Crée un code d'invitation à usage unique |

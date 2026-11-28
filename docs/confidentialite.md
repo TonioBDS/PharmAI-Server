@@ -78,7 +78,7 @@ Leurs propres politiques de confidentialité s’appliquent.
 | Pharmacies proches | Google Maps (ouvert dans l’application Google Maps ou votre navigateur) | Le mot « pharmacie » et votre position au moment de la recherche ; ensuite, ce que Google Maps recueille selon ses propres règles |
 | Photo d’un produit non médicamenteux | [Open Food Facts](https://world.openfoodfacts.org/privacy) et ses projets frères | Le code-barres du produit |
 | Notice officielle | [Base de données publique des médicaments](https://base-donnees-publique.medicaments.gouv.fr) (ouverte dans votre navigateur) | Le code du médicament |
-| Recherche d’image | Google (ouvert dans votre navigateur) | Le nom du produit |
+| Recherche d’image | Dans l’app : [Brave Search](https://search.brave.com/help/privacy-policy), par l’intermédiaire du serveur PharmAI de votre partage si son exploitant l’a activée ; les images choisies sont récupérées sur leur site d’origine. Sinon : Google (ouvert dans votre navigateur) | Le nom du produit (le serveur ne l’enregistre pas) ; le site d’une image voit l’adresse IP du téléphone |
 | Mise à jour de la base des médicaments et des informations par destination (voyages) | [GitHub](https://docs.github.com/fr/site-policy/privacy-policies/github-general-privacy-statement) (dépôt public PharmAI-Data) | Rien : les fichiers complets sont téléchargés, comme sur un site web, quelle que soit la destination choisie (GitHub voit l’adresse IP) |
 | Pharmacie de garde | 3237.fr (ouvert dans votre navigateur) | Rien, sauf ce que vous y saisissez |
 

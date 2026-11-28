@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 0.6.0
+
+- Recherche d'images pour la photo des produits : avec une clé Brave Search (option `brave_search_key`), l'app affiche une grille d'images à toucher, sans passer par le navigateur.
+
 ## 0.5.2
 
 - Photos supprimées dans l'app : leur copie chiffrée est aussi effacée du serveur (par un administrateur, une semaine après).

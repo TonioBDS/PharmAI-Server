@@ -4,11 +4,13 @@ import type { Db } from './db.js';
 import { blobRoutes } from './routes/blobs.js';
 import { changeRoutes } from './routes/changes.js';
 import { householdRoutes } from './routes/households.js';
+import { imageRoutes } from './routes/images.js';
 import { purgeInactive } from './cleanup.js';
 
-export const VERSION = '0.5.2';
+export const VERSION = '0.6.0';
 
-export function buildApp(config: Config, db: Db): FastifyInstance {
+/** `fetch` : remplacé dans les tests (appels à Brave Search). */
+export function buildApp(config: Config, db: Db, deps: { fetch?: typeof fetch } = {}): FastifyInstance {
   const app = Fastify({
     logger: {
       level: config.logLevel,
@@ -20,12 +22,13 @@ export function buildApp(config: Config, db: Db): FastifyInstance {
 
   app.get('/health', async () => {
     await db.query('SELECT 1 AS ok');
-    return { status: 'ok', version: VERSION, registration: config.allowRegistration };
+    return { status: 'ok', version: VERSION, registration: config.allowRegistration, imageSearch: config.braveSearchKey ? (config.imageSearchPublic ? 'public' : 'devices') : false };
   });
 
   app.register(householdRoutes, { db, config });
   app.register(changeRoutes, { db, config });
   app.register(blobRoutes, { db, config });
+  app.register(imageRoutes, { db, config, fetch: deps.fetch });
 
   // Nettoyage des partages abandonnés, une fois par jour (désactivé par défaut)
   if (config.inactiveDays > 0) {
